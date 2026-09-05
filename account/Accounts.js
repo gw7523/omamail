@@ -323,29 +323,67 @@ function add(list, account) {
   return next
 }
 
-// One row edited in place: the setup form's save, or a host learning its own
-// address. The list is rebuilt through `add`, so a row that now names a
-// mailbox already in the list folds into that one rather than standing beside
-// it — but `add`'s rule for the selection is written for a list being built,
-// not for one being copied. Given no active row yet, it hands the selection to
-// the first named row it meets, and while a copy is half done that is row 0
-// whatever row was active. Editing a mailbox below the first used to move the
-// selection there, and the sign-in that followed the save went to the wrong
-// server. The selection is decided here instead: it stays with the row that
-// had it, under whatever id the edit gave that row.
-function replaceAt(list, index, entry) {
-  var source = copyList(list)
+// The id `account` would take at `index`, if another row already holds it.
+// Empty means the write is safe: a new address, or the same row keeping its
+// own id. The setup form used to rebuild the list with `add`, which treats a
+// colliding id as "replace that other mailbox" and drops the row being
+// edited — so re-authing Proton while iCloud was on screen deleted iCloud.
+function collidingId(list, index, account) {
+  var entry = makeAccount(account)
+  if (!entry.id) return ""
+  var other = indexOfId((list || {}).accounts || [], entry.id)
   var at = Math.floor(Number(index))
-  if (!isFinite(at) || at < 0 || at >= source.accounts.length) return source
-  var replaced = source.accounts[at]
-  var replacement = makeAccount(entry)
-  var next = emptyList()
-  for (var i = 0; i < source.accounts.length; i++)
-    next = add(next, i === at ? replacement : source.accounts[i])
-  var wasActive = source.activeId !== "" && replaced.id === source.activeId
-  if (wasActive && replacement.id !== "") next.activeId = replacement.id
-  else if (indexOfId(next.accounts, source.activeId) >= 0) next.activeId = source.activeId
+  if (other >= 0 && other !== at) return entry.id
+  return ""
+}
+
+// Put `account` at `index` and nowhere else. Unlike `add`, a colliding id is
+// a no-op rather than a silent merge, so a save cannot delete a mailbox that
+// was not the one being edited.
+function replaceAt(list, index, account) {
+  var next = copyList(list)
+  var at = Math.floor(Number(index))
+  if (!isFinite(at) || at < 0 || at >= next.accounts.length) return next
+  if (collidingId(next, at, account)) return next
+  var entry = makeAccount(account)
+  next.accounts[at] = entry
+  if (entry.id && (next.activeId === "" || indexOfId(next.accounts, next.activeId) < 0))
+    next.activeId = entry.id
   return next
+}
+
+function namedIds(list) {
+  var values = Array.isArray((list || {}).accounts) ? list.accounts : []
+  var ids = []
+  for (var i = 0; i < values.length; i++) {
+    var id = trimmed((values[i] || {}).id)
+    if (id) ids.push(id)
+  }
+  return ids
+}
+
+// The persisted set less one id: the one a row gave up when its address was
+// corrected, released on purpose rather than lost.
+function withoutId(ids, id) {
+  var kept = []
+  var values = Array.isArray(ids) ? ids : []
+  for (var i = 0; i < values.length; i++) {
+    if (values[i] !== id) kept.push(values[i])
+  }
+  return kept
+}
+
+function dropsAnyId(ids, payload) {
+  var wanted = Array.isArray(ids) ? ids : []
+  var kept = namedIds(payload)
+  for (var i = 0; i < wanted.length; i++) {
+    var found = false
+    for (var j = 0; j < kept.length; j++) {
+      if (kept[j] === wanted[i]) { found = true; break }
+    }
+    if (!found) return true
+  }
+  return false
 }
 
 // The neighbour that slides into the removed row is the least surprising
