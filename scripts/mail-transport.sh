@@ -161,6 +161,25 @@ else
   escaped_credentials=$(escape "$credentials")
 fi
 
+# Password IMAP: curl `user = user:password`.
+# Microsoft 365 XOAUTH2: credentials are `oauth2-bearer:<user>:<token>` and
+# become curl `user` + `oauth2-bearer` (see --oauth2-bearer). A colon rather
+# than a tab: tabs are control characters and are refused before curl starts.
+print_curl_auth() {
+  case "$credentials" in
+    oauth2-bearer:*)
+      oauth_rest=${credentials#oauth2-bearer:}
+      oauth_user=${oauth_rest%%:*}
+      oauth_token=${oauth_rest#*:}
+      printf 'user = "%s"\n' "$(escape "$oauth_user")"
+      printf 'oauth2-bearer = "%s"\n' "$(escape "$oauth_token")"
+      ;;
+    *)
+      printf 'user = "%s"\n' "$escaped_credentials"
+      ;;
+  esac
+}
+
 umask 077
 work=$(mktemp -d "${TMPDIR:-/tmp}/omamail.XXXXXX") || fail 'mail-transport.sh: no temporary directory'
 trap 'rm -rf "$work"' EXIT INT TERM HUP
@@ -259,12 +278,17 @@ else
 fi
 }
 
+# Two spellings of a bearer reach here: the `-oauth` modes carry it as an
+# argument of its own, and an IMAP credential of the form
+# `oauth2-bearer:<user>:<token>` carries it inside the credential, which is
+# what a token from an external helper arrives as. Either way it goes out as
+# curl's `user` and `oauth2-bearer` rather than as a password.
 print_authentication() {
   if [ "$oauth" = 1 ]; then
     printf 'user = "%s"\n' "$escaped_username"
     printf 'oauth2-bearer = "%s"\n' "$escaped_bearer"
   else
-    printf 'user = "%s"\n' "$escaped_credentials"
+    print_curl_auth
   fi
 }
 
