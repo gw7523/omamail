@@ -81,6 +81,12 @@ Item {
     handle.children = []
   }
 
+  function forgetRejectedSecret(status, response, detail) {
+    if (!auth || typeof auth.invalidateAccessToken !== "function") return
+    if (Imap.isRejectedCredentials(status, response, detail))
+      auth.invalidateAccessToken()
+  }
+
   // ------------------------------------------------------------- transport
 
   // One invocation, one connection, however many commands. curl reuses the
@@ -169,6 +175,7 @@ Item {
         var text = Imap.decodeResponse(out, Mail.base64ToBytes, Mail.bytesToLatin1)
         var detail = Imap.decodeResponse(err, Mail.base64ToBytes, Mail.bytesToLatin1)
         if (status !== 0) {
+          root.forgetRejectedSecret(status, text, detail)
           callback("", Imap.transportError(status, text, detail, ""))
           return
         }
@@ -176,6 +183,7 @@ Item {
         // completion is checked separately — a NO is a failure the user has to
         // be told about, not an empty result.
         if (Imap.isFailure(text)) {
+          root.forgetRejectedSecret(0, text, detail)
           callback("", Imap.responseError(0, Imap.failureDetail(text), ""))
           return
         }
@@ -813,6 +821,7 @@ Item {
         if (handle.aborted || typeof callback !== "function") return
         if (status !== 0) {
           var detail = Imap.decodeResponse(err, Mail.base64ToBytes, Mail.bytesToLatin1)
+          root.forgetRejectedSecret(status, "", detail)
           callback(null, Imap.responseError(status, detail, failureLabel))
           return
         }
@@ -972,6 +981,7 @@ Item {
         if (typeof callback !== "function") return
         if (status !== 0) {
           var detail = Imap.decodeResponse(err, Mail.base64ToBytes, Mail.bytesToLatin1)
+          root.forgetRejectedSecret(status, "", detail)
           callback(null, Imap.responseError(status, detail, "The message could not be sent"))
           return
         }
@@ -1042,10 +1052,12 @@ Item {
       var text = Imap.decodeResponse(out, Mail.base64ToBytes, Mail.bytesToLatin1)
       var detail = Imap.decodeResponse(err, Mail.base64ToBytes, Mail.bytesToLatin1)
       if (status !== 0) {
+        root.forgetRejectedSecret(status, text, detail)
         callback(false, Imap.transportError(status, text, detail, ""))
         return
       }
       if (Imap.isFailure(text)) {
+        root.forgetRejectedSecret(0, text, detail)
         callback(false, Imap.responseError(0, Imap.failureDetail(text), ""))
         return
       }
