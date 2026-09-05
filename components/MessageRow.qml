@@ -29,6 +29,7 @@ Rectangle {
   property string agentState: ""
   // The agent's last line while it works on this message, for the tooltip.
   property string agentProgress: ""
+  property bool agentAttention: false
   // Whether any row in the list is ticked. While one is, every row shows its
   // box, so the lane the boxes sit in is the same on every row being compared.
   property bool selectionActive: false
@@ -272,6 +273,7 @@ Rectangle {
       iconSize: Style.font.iconSmall
       size: Style.space(24)
       fontFamily: root.panelFontFamily
+      attention: root.agentAttention
       onClicked: {
         var scene = mapToGlobal(0, height)
         root.agentRequested(scene.x, scene.y)

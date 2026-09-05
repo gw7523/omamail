@@ -80,6 +80,11 @@ Item {
   readonly property string agentCommand: String(settings ? settings.agentCommand || "" : "").trim()
   readonly property bool hasAgent: Agent.hasAgent(agentCommand)
   readonly property var agentJobs: agentRunner.byMessage
+  // Whether any job wants the owner, and which messages' jobs do: what the
+  // agent buttons pulse for. Opening a job's popup or card is what stops it.
+  readonly property bool agentAttention: agentRunner.attention
+  readonly property var agentAttentionByMessage: agentRunner.attentionByMessage
+  function acknowledgeAgentJob(jobId) { agentRunner.acknowledge(jobId) }
   readonly property bool agentBusy: agentRunner.anyActive
 
   function agentJobFor(messageId) { return agentRunner.jobFor(messageId) }

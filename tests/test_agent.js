@@ -167,3 +167,21 @@ assert.strictEqual(agent.jobAboutLabel({ scope: "all" }), "Every mailbox")
   assert.strictEqual(sel.folder, "INBOX")
 }
 console.log("test_agent.js presets ok")
+
+// Attention: a question or a finish nobody has opened yet.
+{
+  const q = { id: "q", messageId: "m1", state: "done", question: "Which?" }
+  const d = { id: "d", messageId: "m2", state: "done" }
+  const r = { id: "r", messageId: "m3", state: "running" }
+  assert.strictEqual(agent.wantsAttention(q, []), true)
+  assert.strictEqual(agent.wantsAttention(q, ["q"]), false, "opened once is enough")
+  assert.strictEqual(agent.wantsAttention(r, []), false, "running is the glyph's job")
+  assert.strictEqual(agent.wantsAttention({ id: "c", state: "cancelled" }, []), false)
+  assert.strictEqual(agent.anyAttention([r, d], []), true)
+  assert.strictEqual(agent.anyAttention([r, d], ["d"]), false)
+  deepEqual(agent.attentionByMessage([q, d, r], ["d"]), { m1: true })
+  deepEqual(agent.markSeen(["a"], "b"), ["a", "b"])
+  deepEqual(agent.markSeen(["a"], "a"), ["a"])
+  deepEqual(agent.markSeen(null, ""), [])
+}
+console.log("test_agent.js attention ok")

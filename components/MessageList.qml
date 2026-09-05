@@ -67,6 +67,7 @@ Column {
       panelFontFamily: root.panelFontFamily
       agentState: Agent.glyphState(root.service.agentJobs[modelData.id])
       agentProgress: Agent.progressText(root.service.agentJobs[modelData.id])
+      agentAttention: root.service.agentAttentionByMessage[modelData.id] === true
       hasCursor: root.cursorId === modelData.id
       selected: root.service.selectedId === modelData.id
       checked: root.checkedIds.indexOf(modelData.id) >= 0

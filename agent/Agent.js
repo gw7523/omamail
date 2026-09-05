@@ -418,3 +418,38 @@ function presetBinaries() {
   for (var i = 0; i < PRESETS.length; i++) if (PRESETS[i].binary !== "") out.push(PRESETS[i].binary)
   return out
 }
+
+// ------------------------------------------------------------ attention
+
+// A job that wants the owner: it asked a question, or it finished and nobody
+// has looked yet. `seen` is the ids the owner has opened since — a popup or
+// a card on screen counts as looking. Running is not attention; the glyph
+// already says that.
+function wantsAttention(job, seen) {
+  if (!job) return false
+  var looked = Array.isArray(seen) ? seen : []
+  if (looked.indexOf(String(job.id)) >= 0) return false
+  var glyph = glyphState(job)
+  return glyph === "question" || glyph === "done" || glyph === "failed"
+}
+
+function anyAttention(jobs, seen) {
+  var list = Array.isArray(jobs) ? jobs : []
+  for (var i = 0; i < list.length; i++) if (wantsAttention(list[i], seen)) return true
+  return false
+}
+
+// messageId -> true for every message whose newest job wants attention.
+function attentionByMessage(jobs, seen) {
+  var map = jobsByMessage(jobs)
+  var out = {}
+  for (var id in map) if (wantsAttention(map[id], seen)) out[id] = true
+  return out
+}
+
+function markSeen(seen, jobId) {
+  var list = Array.isArray(seen) ? seen.slice() : []
+  var id = String(jobId || "")
+  if (id !== "" && list.indexOf(id) < 0) list.push(id)
+  return list
+}

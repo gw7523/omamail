@@ -57,6 +57,10 @@ Item {
   // Reading follows the shown job: the runner is asked for its output when
   // it changes, and again on every poll while it runs.
   onShownIdChanged: if (service && shownId !== "") service.showAgentJob(shownId)
+  // The open card is looked at; so is any card whose state changes while it
+  // is the open one. The glow stops for those.
+  onShownJobChanged: if (visible && service && shownJob) service.acknowledgeAgentJob(String(shownJob.id))
+  onVisibleChanged: if (visible && service && shownJob) service.acknowledgeAgentJob(String(shownJob.id))
   Component.onCompleted: if (service && shownId !== "") service.showAgentJob(shownId)
 
   Rectangle {

@@ -1532,6 +1532,7 @@ Item {
             hoverColor: root.foreground
             fontFamily: root.fontFamily
             selected: root.agentVisible
+            attention: !!root.service && root.service.agentAttention
             onClicked: {
               if (root.agentVisible) root.backToList()
               else root.showAgent()
@@ -1855,6 +1856,8 @@ Item {
           agentOpen: agentPrompt.opened && !!root.service && agentPrompt.messageId === root.service.selectedId
           agentWorking: !!root.service && root.service.selectedId !== ""
             && Agent.isActive(root.service.agentJobs[root.service.selectedId])
+          agentAttention: !!root.service && root.service.selectedId !== ""
+            && root.service.agentAttentionByMessage[root.service.selectedId] === true
           onAddressMenuRequested: function(addresses, sceneX, sceneY) {
             addressMenu.openAt(addresses, sceneX, sceneY)
           }
@@ -2474,6 +2477,7 @@ Item {
         }
         onAnswered: function(jobId, answer) { if (root.service) root.service.answerAgent(jobId, answer) }
         onPaneRequested: function(jobId) { root.showAgentJob(jobId) }
+        onLooked: function(jobId) { if (root.service) root.service.acknowledgeAgentJob(jobId) }
         onCancelRequested: function(id) { if (root.service) root.service.cancelAgent(id) }
       }
 

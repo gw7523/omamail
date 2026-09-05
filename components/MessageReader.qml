@@ -56,6 +56,7 @@ Item {
   // running on it — passed down like every other fact the reader draws.
   property bool agentOpen: false
   property bool agentWorking: false
+  property bool agentAttention: false
 
   function openLink(url) {
     if (Mailto.parse(url)) {
@@ -777,6 +778,7 @@ Item {
           foreground: root.agentWorking ? root.accentColor : root.dimColor
           hoverColor: root.textColor; fontFamily: root.panelFontFamily
           selected: root.agentOpen
+          attention: root.agentAttention
           onClicked: root.actionRequested("agent")
         }
 

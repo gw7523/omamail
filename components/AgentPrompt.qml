@@ -58,6 +58,11 @@ Item {
     place()
   }
 
+  // Opening on a job is looking at it; the glow stops for it.
+  onJobChanged: if (opened && job) root.looked(String(job.id))
+  onOpenedChanged: if (opened && job) root.looked(String(job.id))
+  signal looked(string jobId)
+
   function openFor(id, subjectText, sceneX, sceneY) {
     messageId = String(id || "")
     messageIds = []

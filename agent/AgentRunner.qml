@@ -22,6 +22,15 @@ Item {
   readonly property var byMessage: Agent.jobsByMessage(jobs)
   readonly property bool anyActive: Agent.anyActive(jobs)
 
+  // The jobs the owner has opened since they asked a question or finished:
+  // what the glow stops for. Kept for the session; a restart glows again for
+  // what is still unanswered, which is right.
+  property var seenIds: []
+  readonly property bool attention: Agent.anyAttention(jobs, seenIds)
+  readonly property var attentionByMessage: Agent.attentionByMessage(jobs, seenIds)
+
+  function acknowledge(jobId) { seenIds = Agent.markSeen(seenIds, jobId) }
+
   // What the last listing said, so a job that crossed from running to done
   // between two listings can be reported once.
   signal jobFinished(var job)
