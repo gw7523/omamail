@@ -431,14 +431,14 @@ Item {
   function removeAccount(id) {
     activeIndex = -1
     accountList = Accounts.remove(accountList, id)
-    saveAccounts()
+    saveAccounts({ allowDrop: true })
     refreshCurrent()
   }
 
   function removeAccountAt(index) {
     activeIndex = -1
     accountList = Accounts.removeAt(accountList, index)
-    saveAccounts()
+    saveAccounts({ allowDrop: true })
     refreshCurrent()
   }
 
@@ -498,9 +498,13 @@ Item {
   // configuration, and which provider this row is. Written before the secret
   // is tried, so a mailbox that fails to sign in still has its settings to
   // correct rather than an empty form to fill in again.
+  // Answers whether the configuration was taken. A refused one — a
+  // collision with another mailbox — changes nothing, and the callers that
+  // go on to sign in must not: the secret just typed belongs to the mailbox
+  // that was refused, not to the one still standing at this row.
   function configureAccount(index, values) {
     var accounts = accountList.accounts
-    if (index < 0 || index >= accounts.length) return
+    if (index < 0 || index >= accounts.length) return false
     var raw = values || ({})
 
     var entry = {}
@@ -513,6 +517,13 @@ Item {
     if (raw.jmap !== undefined) entry.jmap = raw.jmap
     if (raw.label !== undefined) entry.label = raw.label
 
+    // Never rebuild through `add`: a colliding id replaces the *other* row
+    // and drops this one, which is how re-authing Proton deleted iCloud.
+    if (Accounts.collidingId(accountList, index, entry)) {
+      duplicateAccount(String(entry.email || ""))
+      return false
+    }
+
     // The selection stays with the row that had it — `Accounts.replaceAt`
     // decides that — and moves to this row only when it is the draft on
     // screen, which is addressed by position because it had no id until now.
@@ -521,15 +532,28 @@ Item {
     if (id !== "" && activeIndex === index)
       updated = Accounts.setActive(updated, id)
     if (activeIndex === index) activeIndex = -1
+    // An address corrected on this row is a new id for the same mailbox, so
+    // the old one is released from the persisted set on purpose: the write
+    // guard would otherwise read its absence as a mailbox dropped by mistake
+    // and refuse every save from here on.
+    var oldId = String(accounts[index].id || "")
+    if (oldId !== "" && id !== oldId)
+      lastPersistedIds = Accounts.withoutId(lastPersistedIds, oldId)
     accountList = updated
     saveAccounts()
     refreshCurrent()
+    return true
   }
 
   // A save that arrives while one is already running is queued, never dropped.
   // Dropping it is what made adding a mailbox undo itself: the new account was
   // never written, and the watcher then read the older file back over it.
   property bool accountsSaveQueued: false
+  property bool accountsSaveQueuedAllowDrop: false
+  // Ids last successfully loaded or written. `dropsNamedMailbox` only sees
+  // memory, so once a buggy save has already dropped a row in memory it will
+  // not refuse the write. This snapshot is what stops that reaching disk.
+  property var lastPersistedIds: []
 
   // Identical text is not a write. The editor saves when it is done with
   // rather than on every keystroke, but it is also rebuilt by the write it
@@ -570,7 +594,7 @@ Item {
     saveAccounts()
   }
 
-  function saveAccounts() {
+  function saveAccounts(opts) {
     if (!accountsLoaded) return
     // A nameless row is setup state, never a mailbox. There is no legitimate
     // path that persists only one — Add waits for configureAccount, and the UI
@@ -592,11 +616,16 @@ Item {
     // row. Removal never arrives here as an omission: it goes through
     // `remove` or `removeAt`, so the row is gone from `accountList` too.
     if (Accounts.dropsNamedMailbox(accountList, writable)) return
+    var allowDrop = !!(opts && opts.allowDrop)
+    if (!allowDrop && Accounts.dropsAnyId(lastPersistedIds, writable)) return
     if (accountsWriter.running) {
       accountsSaveQueued = true
+      if (allowDrop) accountsSaveQueuedAllowDrop = true
       return
     }
     accountsSaveQueued = false
+    accountsSaveQueuedAllowDrop = false
+    lastPersistedIds = Accounts.namedIds(writable)
     accountsWritePayload = Accounts.serialize(writable)
     accountsWriter.command = [pluginDir + "/scripts/config-store.sh", "accounts.json"]
     accountsWriter.running = true
@@ -632,6 +661,7 @@ Item {
     if (accountsWriter.running || accountsSaveQueued) return
     accountList = loaded
     accountsLoaded = true
+    lastPersistedIds = Accounts.namedIds(Accounts.savedOnly(loaded))
   }
 
   signal accountAdded()
@@ -1160,7 +1190,7 @@ Item {
   // one on screen. Addressed by index because that is the only handle on a row
   // that has no address yet — which is exactly the row being filled in.
   function configureCurrentAccount(values) {
-    configureAccount(editingIndex(), values)
+    return configureAccount(editingIndex(), values)
   }
 
   // Saving a new address rebuilds the account host. Wait for that replacement
@@ -1168,15 +1198,17 @@ Item {
   // that the save has just retired, which made a failed attempt knock the user
   // out of the add flow on the next click.
   function configureCurrentAccountAndSignIn(values, secret) {
-    configureCurrentAccount(values)
+    if (!configureCurrentAccount(values)) return false
     Qt.callLater(function() { root.signInWithPassword(secret) })
+    return true
   }
 
   // OAuth providers save their non-secret client configuration before the
   // account host that owns the browser flow is built.
   function configureCurrentAccountAndSignInOAuth(values) {
-    configureCurrentAccount(values)
+    if (!configureCurrentAccount(values)) return false
     Qt.callLater(function() { root.signIn() })
+    return true
   }
 
   function indexOfActiveAccount() {
@@ -1432,7 +1464,10 @@ Item {
     }
     onExited: {
       root.accountsWritePayload = ""
-      if (root.accountsSaveQueued) root.saveAccounts()
+      if (root.accountsSaveQueued) {
+        var drop = root.accountsSaveQueuedAllowDrop
+        root.saveAccounts(drop ? { allowDrop: true } : undefined)
+      }
     }
   }
 
