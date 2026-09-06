@@ -234,6 +234,25 @@ check_absent "SMTP does not emit --next sections" "$config" 'next'
 check "SMTP keeps its transfer deadline" "$config" 'max-time = 60'
 check "SMTP keeps its connection deadline" "$config" 'connect-timeout = 20'
 
+# ------------------------------------------------------------- Graph send
+
+graph="graph-send $(b64 'https://graph.microsoft.com/v1.0/me/sendMail') $(b64 'tok.en-value') $(b64 'Subject: via graph
+
+body')"
+config=$(config_for "$graph")
+check "Graph is POSTed to its one address" "$config" 'url = "https://graph.microsoft.com/v1.0/me/sendMail"'
+check "as a POST" "$config" 'request = "POST"'
+check "with the token as a bearer header, never a user field" "$config" 'header = "Authorization: Bearer tok.en-value"'
+check_absent "and no curl user field" "$config" 'user = '
+check "as base64 MIME in a text/plain body" "$config" 'header = "Content-Type: text/plain"'
+check "read from the private working file" "$config" 'data-binary = "@'
+check "Graph keeps its transfer deadline" "$config" 'max-time = 60'
+check_absent "Graph does not emit --next sections" "$config" 'next'
+if printf '%s\n' "graph-send $(b64 'https://evil.example.net/sendMail') $(b64 't') $(b64 'x')" | "$script" >/dev/null 2>&1; then
+  echo "mail-transport.sh: graph-send must refuse any address but Graph's" >&2
+  exit 1
+fi
+
 # --------------------------------------------------------- IMAP draft upload
 
 append="imap-append $(b64 'imaps://imap.example.org:993/Drafts') $(b64 'jane:pw') $(b64 'Subject: saved draft

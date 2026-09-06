@@ -167,6 +167,24 @@ function normalizeAuth(value) {
   return trimmed(value).toLowerCase() === "xoauth2" ? "xoauth2" : ""
 }
 
+// How a message leaves: SMTP, or Microsoft Graph's sendMail for a Microsoft
+// 365 tenant that has switched authenticated SMTP off. Graph takes the same
+// MIME the SMTP path builds and files the sent copy itself; it needs a token
+// of its own audience, which is a second token account.
+var GRAPH_SEND_URL = "https://graph.microsoft.com/v1.0/me/sendMail"
+
+function sendsViaGraph(raw) {
+  return trimmed((raw || {}).send).toLowerCase() === "graph"
+}
+
+function normalizeSend(value) {
+  return trimmed(value).toLowerCase() === "graph" ? "graph" : ""
+}
+
+function graphTokenAccountOf(raw) {
+  return trimmed((raw || {}).graphTokenAccount)
+}
+
 // The string `mail-transport.sh` decodes as curl credentials. Password IMAP is
 // `user:password`; XOAUTH2 is `oauth2-bearer:<user>:<token>` so the transport
 // can emit curl's `user` + `oauth2-bearer` options. A tab is a control
@@ -272,7 +290,9 @@ function normalizeSettings(raw) {
     // machine.
     insecure: values.insecure === true && isLoopback(values.imapHost),
     auth: normalizeAuth(values.auth),
-    tokenAccount: tokenAccountOf(values)
+    tokenAccount: tokenAccountOf(values),
+    send: normalizeSend(values.send),
+    graphTokenAccount: graphTokenAccountOf(values)
   }
 }
 
@@ -311,6 +331,8 @@ function validateSettings(raw) {
     return { ok: false, error: "That is not a valid SMTP server address" }
   if (usesXoauth2(settings) && settings.tokenAccount === "")
     return { ok: false, error: "XOAUTH2 mailboxes need a token helper account name" }
+  if (sendsViaGraph(settings) && settings.graphTokenAccount === "")
+    return { ok: false, error: "Name the token account for Microsoft Graph" }
   return { ok: true, error: "", settings: settings }
 }
 

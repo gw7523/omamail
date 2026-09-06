@@ -15,6 +15,11 @@
 #   imap-id <b64 root url> <b64 url> <b64 user:password> <b64 preamble> <b64 command> ...
 #   imap-append <b64 url> <b64 user:password> <b64 message> <b64 flags>
 #   smtp <b64 url> <b64 user:password> <b64 from> <b64 message> <b64 rcpt> ...
+#   graph-send <b64 url> <b64 token> <b64 message>
+#
+# graph-send is Microsoft Graph's sendMail for a Microsoft 365 tenant that has
+# authenticated SMTP switched off: the same message, POSTed as base64 MIME
+# with a bearer token of Graph's own audience. Graph files the sent copy.
 #
 # base64 rather than the values themselves, for three reasons that each bite
 # once during this script's life:
@@ -81,7 +86,7 @@ field_number=0
 for field in "$@"; do
   field_number=$((field_number + 1))
   case "$mode:$field_number" in
-    *:1|smtp:5|imap-append:4) continue ;;
+    *:1|smtp:5|imap-append:4|graph-send:4) continue ;;
   esac
   validate_config_fields "$field"
 done
@@ -109,8 +114,8 @@ else
 fi
 
 case "$mode" in
-  imap|imap-id|imap-append|smtp) ;;
-  *) fail 'mail-transport.sh: mode must be imap, imap-id, imap-append or smtp' ;;
+  imap|imap-id|imap-append|smtp|graph-send) ;;
+  *) fail 'mail-transport.sh: mode must be imap, imap-id, imap-append, smtp or graph-send' ;;
 esac
 
 # The URL is built and validated by Imap.js, which has already refused anything
@@ -120,6 +125,9 @@ esac
 # file:// or at an ordinary web server.
 case "$url" in
   imaps://*|imap://*|smtps://*|smtp://*) ;;
+  # Graph has one address, fixed here rather than taken from the caller, so
+  # a bearer token can only ever be offered to Microsoft's endpoint.
+  https://graph.microsoft.com/v1.0/me/sendMail) [ "$mode" = "graph-send" ] || fail 'mail-transport.sh: refusing a URL that is not imap(s) or smtp(s)' ;;
   *) fail 'mail-transport.sh: refusing a URL that is not imap(s) or smtp(s)' ;;
 esac
 
@@ -154,7 +162,16 @@ trap 'rm -rf "$work"' EXIT INT TERM HUP
 # took to read it. `build_config` prints it; the pipeline below is what feeds
 # it in without it ever being written down.
 build_config() {
-if [ "$mode" = "smtp" ]; then
+if [ "$mode" = "graph-send" ]; then
+  printf 'url = "%s"\n' "$escaped_url"
+  printf 'noproxy = "*"\n'
+  printf 'request = "POST"\n'
+  printf 'header = "%s"\n' "$(escape "Authorization: Bearer $graph_token")"
+  printf 'header = "Content-Type: text/plain"\n'
+  printf 'max-time = 60\n'
+  printf 'connect-timeout = 20\n'
+  printf 'data-binary = "@%s"\n' "$(escape "$work/message")"
+elif [ "$mode" = "smtp" ]; then
   [ $# -ge 3 ] || fail 'mail-transport.sh: smtp needs a sender, a message and a recipient'
   sender=$(decode "$1")
   shift 2
@@ -242,7 +259,13 @@ fi
 
 # The SMTP body has to be on disk before curl starts, because the config it is
 # named in is what stdin is carrying.
-if [ "$mode" = "smtp" ]; then
+if [ "$mode" = "graph-send" ]; then
+  [ $# -eq 1 ] || fail 'mail-transport.sh: graph-send needs a url, a token and a message'
+  # The token arrived in the credentials field, like a password would.
+  graph_token=$credentials
+  # Graph takes the MIME base64-encoded, as the body of a text/plain POST.
+  decode "$1" | base64 | tr -d '\n' > "$work/message"
+elif [ "$mode" = "smtp" ]; then
   [ $# -ge 3 ] || fail 'mail-transport.sh: smtp needs a sender, a message and a recipient'
   decode "$2" > "$work/message"
 elif [ "$mode" = "imap-append" ]; then
@@ -291,6 +314,16 @@ while :; do
   [ "$attempt" -le 2 ] || break
   sleep 1
 done
+
+# Graph answers with a status, not with a curl error: 202 is sent, anything
+# else is the body's own explanation.
+if [ "$mode" = "graph-send" ] && [ "$status" -eq 0 ] && [ -s "$work/headers" ]; then
+  http=$(sed -n 's/^HTTP\/[0-9.]* \([0-9]*\).*/\1/p' "$work/headers" | tail -1)
+  case "$http" in
+    2[0-9][0-9]|"") ;;
+    *) status=22; printf 'Graph answered %s: %s' "$http" "$(tr -d '\r' < "$work/out" | head -c 400)" > "$work/err" ;;
+  esac
+fi
 
 printf '%s\n' "$status"
 if { [ "$mode" = "imap" ] || [ "$mode" = "imap-id" ]; } \
