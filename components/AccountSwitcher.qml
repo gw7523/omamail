@@ -274,6 +274,7 @@ Item {
 
           HoverHandler { id: rowHover }
           TapHandler {
+            gesturePolicy: TapHandler.ReleaseWithinBounds
             onTapped: {
               menu.close()
               root.accountChosen(row.index)
@@ -337,6 +338,6 @@ Item {
     }
 
     HoverHandler { id: plainHover }
-    TapHandler { onTapped: plainRow.activated() }
+    TapHandler { gesturePolicy: TapHandler.ReleaseWithinBounds; onTapped: plainRow.activated() }
   }
 }

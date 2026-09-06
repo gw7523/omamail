@@ -2007,6 +2007,14 @@ Item {
     return true
   }
 
+  // The batch — several ticked rows at once — lives in `BatchAction.qml`.
+  function actMany(ids, action) { return batchAction.run(ids, action) }
+
+  BatchAction {
+    id: batchAction
+    account: root
+  }
+
   // ---------------------------------------------------------------- reply
 
   // Loads the original bytes before a forward can claim it includes them.
@@ -2864,13 +2872,19 @@ Item {
 
   // The client takes the manager as a required property, so it cannot be built
   // until there is one.
+  // A test's stand-in for the provider: a component the loader prefers when
+  // set, so the account can be driven against a controlled client without a
+  // server or a credential. Never set outside a test.
+  property Component clientOverride: null
+
   Loader {
     id: apiLoader
     active: !!authLoader.item
-    sourceComponent: root.providerId === "imap" || root.providerId === "outlook"
-      ? imapClientComponent
-      : (root.providerId === "jmap" ? jmapClientComponent
-        : (root.providerId === "hey" ? heyClientComponent : gmailClientComponent))
+    sourceComponent: root.clientOverride ? root.clientOverride
+      : (root.providerId === "imap" || root.providerId === "outlook"
+        ? imapClientComponent
+        : (root.providerId === "jmap" ? jmapClientComponent
+          : (root.providerId === "hey" ? heyClientComponent : gmailClientComponent)))
   }
 
   Component {
