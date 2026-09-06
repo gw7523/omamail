@@ -1225,12 +1225,14 @@ Item {
       if (service && starred !== "") service.toggleStar(starred)
       return
     }
-    if (id === "toggleCheck") return toggleCheck(cursorId)
+    // Only where the list is on screen: in a narrow window the reader has
+    // replaced it, and a tick nobody can see is a tick nobody meant.
+    if (id === "toggleCheck") return listOnScreen ? toggleCheck(cursorId) : false
     if (id === "askAgent") {
       var target = currentView === "reader" && service ? service.selectedId : cursorId
       return openAgentCentered(target)
     }
-    if (id === "checkAll") return checkAll()
+    if (id === "checkAll") return listOnScreen ? checkAll() : false
     if (id === "moveToLabel") return openLabelPicker()
     if (id === "markRead") return actOnCursor("markRead")
     if (id === "markUnread") return actOnCursor("markUnread")
