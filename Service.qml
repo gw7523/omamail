@@ -333,12 +333,20 @@ Item {
     // have nothing to run in.
     if (!next && accountHosts.count > 0) next = accountHosts.objectAt(0)
     if (next === current) return
+    var switching = !!current
     for (var i = 0; i < accountHosts.count; i++) {
       var host = accountHosts.objectAt(i)
       if (host) host.active = host === next
     }
     current = next
     if (current) current.windowOpen = windowOpen
+    // A switch lands on the inbox whatever the account was left looking at:
+    // the other account's folder is not where the eye expects to arrive, and
+    // the one this account was on last is no longer news. Startup keeps the
+    // account's own state, since nothing was being looked at before it.
+    if (switching && current && typeof current.selectMailbox === "function"
+        && (current.mailboxKey !== "inbox" || current.rawQuery !== "" || current.searchQuery !== ""))
+      current.selectMailbox("inbox")
   }
 
   // The whole point of switching is that it is instant, which it is because

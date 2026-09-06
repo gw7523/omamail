@@ -1120,6 +1120,9 @@ Item {
     function onActiveAccountIdChanged() {
       root.clearChecksIfForeign()
       root.cursorId = ""
+      // The account lands on its inbox (Service sees to that), so a search
+      // left in the box would describe a list that is no longer on screen.
+      if (searchBar.queryText !== "") searchBar.setQuery("")
     }
     function onMessagesChanged() {
       root.clearChecksIfForeign()
@@ -1447,7 +1450,9 @@ Item {
             objectName: "scope-account"
             anchors.verticalCenter: parent.verticalCenter
             visible: !root.showPage && !root.composing
-            text: root.ready ? root.service.accountLabel : "No account"
+            // Gated on there being an account, not on it being ready: a
+            // signed-out account is exactly when the switcher is wanted.
+            text: root.service && root.service.accountLabel !== "" ? root.service.accountLabel : "No account"
             tooltipText: "Switch account · Alt+A"
             foreground: root.foreground
             hoverColor: root.foreground
@@ -1456,7 +1461,7 @@ Item {
             fontSize: Style.font.body
             maxTextWidth: root.compact ? Style.space(110) : Style.space(180)
             selected: accountSwitcher.opened
-            enabled: root.ready
+            enabled: !!root.service && root.service.accountLabel !== ""
             onClicked: {
               var scene = mapToGlobal(0, height)
               accountSwitcher.openAt(scene.x, scene.y)
@@ -1487,7 +1492,7 @@ Item {
             fontSize: Style.font.body
             maxTextWidth: root.compact ? Style.space(110) : Style.space(180)
             selected: mailboxSwitcher.opened
-            enabled: root.ready
+            enabled: !!root.service && root.service.accountLabel !== ""
             onClicked: {
               var scene = mapToGlobal(0, height)
               mailboxSwitcher.openAt(scene.x, scene.y)
