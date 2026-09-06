@@ -61,6 +61,8 @@ assert.strictEqual(provider.query("imap", "inbox", "from:", ""),
   'folder:INBOX TEXT "from:"', "an operator with no value searches for what was typed, not for everything")
 assert.strictEqual(provider.query("imap", "inbox", "from:*", ""),
   'folder:INBOX TEXT "from:*"', "a wildcard alone is not a criterion either")
+assert.strictEqual(provider.query("imap", "inbox", "from:*** invoice", ""),
+  'folder:INBOX TEXT "from:*** invoice"', "an operator that strips to nothing is not quietly dropped")
 // Separate questions. `labels` is whether a message can carry several at once,
 // which is what the reader's strip draws; `move` is whether the user gets to
 // say where it goes. IMAP answers no and yes -- one folder per message is the

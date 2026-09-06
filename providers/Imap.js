@@ -66,8 +66,9 @@ var MAILBOXES = [
 // a space after the colon is allowed because that is how they get typed, and a
 // quoted value keeps its spaces. IMAP matches a criterion as a substring, so a
 // `*` wildcard is dropped rather than searched for. An operator with nothing
-// after it searches for the text as typed, which matches nothing, rather than
-// for nothing, which would list the whole inbox as if it were a result.
+// after it, or nothing but wildcards, is searched for as typed — which
+// matches nothing — rather than dropped, which would either list the whole
+// inbox as if it were a result or quietly widen the search.
 // JSON.stringify is used for the quoting because it escapes exactly the two
 // characters IMAP escapes.
 function searchQuery(text) {
@@ -84,6 +85,7 @@ function searchQuery(text) {
     }
     var term = (match[2] !== undefined ? match[2] : match[3]).replace(/\*/g, "")
     if (term !== "") parts.push(match[1].toUpperCase() + " " + JSON.stringify(term))
+    else words.push(match[0])
   }
   var plain = words.join(" ").trim()
   if (plain !== "") parts.push("TEXT " + JSON.stringify(plain))
