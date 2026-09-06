@@ -1085,7 +1085,10 @@ awk '
 #    has to be in the tree or the card falls back to a placeholder. It gets a
 #    ceiling of its own instead of none: a card image that grew to a megabyte
 #    would still be a megabyte every user clones.
-limit=$((128 * 1024))
+# The fork carries the send queue and the Graph send path in the account
+# until they go upstream as components of their own: 160 KiB here, 128
+# upstream.
+limit=$((160 * 1024))
 preview_limit=$((384 * 1024))
 oversized=$(git ls-files -z \
   | xargs -0 -I{} sh -c '
