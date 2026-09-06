@@ -1420,6 +1420,18 @@ Item {
     })
   }
 
+  // Everything parked or waiting is let go — the account is leaving — and
+  // the names of its sends are handed back so the composer can put their
+  // drafts in front of the writer.
+  function abandonPending() {
+    var ids = []
+    for (var i = 0; i < pendingSends.length; i++) ids.push(pendingSends[i].id)
+    pendingSends = []
+    queuedActions = []
+    armSendTimer()
+    return ids
+  }
+
   function runQueuedAction() {
     if (pendingAction !== "" || queuedActions.length === 0) return
     var queued = queuedActions.slice()
@@ -2485,7 +2497,7 @@ Item {
     var queued = Outbox.schedule(payload, now, undoSendSeconds)
     // No undo window and nothing ahead of it: it goes now, as it always did.
     // Behind another send it waits its turn like any other.
-    if (!queued && !sending) return deliver(payload) ? id : ""
+    if (!queued && !sending && pendingSends.length === 0) return deliver(payload) ? id : ""
     var parked = pendingSends.slice()
     parked.push({
       id: id, payload: payload, dueAt: queued ? queued.dueAt : now,
@@ -2741,22 +2753,6 @@ Item {
     searchQuery = query
     searchRaw = built
     // Typing in the search box leaves whatever label was selected.
-    rawQuery = ""
-    rawLabelId = ""
-    clearSelection()
-    messages = []
-    listLoaded = false
-    loadMessages(false)
-  }
-
-  // A search built by the app rather than typed: `query` is already in the
-  // provider's own words and `text` is what the search box shows for it.
-  function searchAddress(query, text) {
-    var raw = String(query || "").trim()
-    if (raw === "") return
-    if (raw === searchRaw && rawQuery === "") return
-    searchQuery = String(text || raw).trim()
-    searchRaw = raw
     rawQuery = ""
     rawLabelId = ""
     clearSelection()

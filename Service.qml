@@ -437,17 +437,32 @@ Item {
   }
 
   function removeAccount(id) {
+    var abandoned = abandonPending(findAccount(id))
     activeIndex = -1
     accountList = Accounts.remove(accountList, id)
     saveAccounts({ allowDrop: true })
     refreshCurrent()
+    handBackAbandoned(abandoned)
   }
 
   function removeAccountAt(index) {
+    var abandoned = abandonPending(accountAt(index))
     activeIndex = -1
     accountList = Accounts.removeAt(accountList, index)
     saveAccounts({ allowDrop: true })
     refreshCurrent()
+    handBackAbandoned(abandoned)
+  }
+
+  // A leaving account's parked sends are not sent and not lost: their
+  // drafts go back to the composer, on whichever account is current then.
+  function abandonPending(host) {
+    return host && typeof host.abandonPending === "function" ? host.abandonPending() : []
+  }
+
+  function handBackAbandoned(ids) {
+    for (var i = 0; i < ids.length; i++) replyFailed(String(ids[i]))
+    if (ids.length > 0) note("Unsent mail from the removed account is back in the composer")
   }
 
   // An account learns its own address on its first profile read; until then the

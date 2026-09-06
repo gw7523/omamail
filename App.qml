@@ -58,6 +58,17 @@ Item {
     Qt.callLater(root.restoreComposeRecovery)
   }
 
+  // Every parked draft but the one named: they ride along in the recovery
+  // file so a restart inside several undo windows loses none of them.
+  function parkedBesides(draft) {
+    var out = []
+    var parked = compose.parkedDrafts || []
+    for (var i = 0; i < parked.length; i++) {
+      if (parked[i].draft !== draft) out.push(parked[i].draft)
+    }
+    return out
+  }
+
   function restoreComposeRecovery() {
     if (!opened || !composeRecoveryLoaded || composeRecovery.active !== true
         || compose.opened || !composeRecovery.draft) return false
@@ -71,6 +82,9 @@ Item {
     composeRecoveryRestoring = true
     compose.restoreDraft(composeRecovery.draft)
     composeRecoveryRestoring = false
+    // The others come back one at a time, each as the one before it closes.
+    var parked = composeRecovery.parked || []
+    if (parked.length > 0) compose.recoveryDrafts = compose.recoveryDrafts.concat(parked)
     return true
   }
 
@@ -78,7 +92,7 @@ Item {
     composeRecoveryTimer.stop()
     var draft = saved || (compose.opened ? compose.snapshotDraft()
       : (compose.parkedForSend ? compose.pendingDraft : null))
-    var raw = Recovery.serialize(composeReturnView(), draft)
+    var raw = Recovery.serialize(composeReturnView(), draft, parkedBesides(draft))
     if (raw === "") {
       clearComposeRecovery()
       return composeRecoveryRevision
@@ -1155,7 +1169,8 @@ Item {
     ignoreUnknownSignals: true
     function onReplySent(sendId) {
       if (!compose.completePendingSend(sendId)) return
-      if (compose.opened) root.scheduleComposeRecovery()
+      // Other sends may still be parked: recovery keeps holding them.
+      if (compose.opened || compose.parkedForSend) root.scheduleComposeRecovery()
       else root.clearComposeRecovery()
     }
     // The send did not happen, so the draft is still the only copy. Reopening
@@ -2462,6 +2477,9 @@ Item {
           visible: text !== "" && !root.showPage
           text: root.service && root.service.activityStatus !== undefined
             ? root.service.activityStatus : ""
+          // Capped so a long line of it cannot push the address off the bar.
+          width: Math.min(implicitWidth, Style.space(360))
+          elide: Text.ElideRight
           color: root.dim
           font.family: root.fontFamily
           font.pixelSize: Style.font.caption
