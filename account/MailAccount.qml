@@ -2247,8 +2247,11 @@ Item {
         root.reportSendSuccess(sentPayload, sendId)
         if (payload && String(payload.draftId || "") !== "") root.forgetSentDraft(String(payload.draftId))
         // The copy is in Sent now, filed by this client or by the server; a
-        // Sent list on screen reads it in rather than waiting for the poll.
-        if (root.mailboxKey === "sent" && root.active) root.loadMessages(false, true, "")
+        // Sent list on screen reads it in rather than waiting for the poll. A
+        // moment later rather than at once: a server that files the copy
+        // itself (Graph) can show it over IMAP a beat after the send is
+        // acknowledged.
+        sentReloadTimer.restart()
       }
       // The line is free: the next parked send whose moment has come goes.
       Qt.callLater(sendQueue.deliverDue)
@@ -2975,6 +2978,12 @@ Item {
   onAuthChanged: if (auth) auth.restoreSession()
 
   // Only ages the "synced" label; nothing else depends on it.
+  Timer {
+    id: sentReloadTimer
+    interval: 2500
+    onTriggered: if (root.mailboxKey === "sent" && root.active) root.loadMessages(false, true, "")
+  }
+
   Timer {
     interval: 30000
     running: root.ready
