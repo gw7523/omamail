@@ -383,8 +383,11 @@ Item {
           }
           root.run(folder, [Imap.topUidCommand(count)], function(ceilingText, ceilingError) {
             if (handle.aborted) return
+            // Some servers answer BAD to a range that starts past the end,
+            // which an expunge between STATUS and this FETCH can produce.
+            // The snapshot is the authoritative answer either way.
             if (ceilingError) {
-              finish([], ceilingError, false, false)
+              searchSnapshotRemainder(false)
               return
             }
             var ceiling = Imap.parseUidList(ceilingText)
