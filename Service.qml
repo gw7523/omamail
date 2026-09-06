@@ -172,6 +172,10 @@ Item {
     var entry = Accounts.find(accountList, activeAccountId)
     return entry ? String(entry.signature || "") : ""
   }
+  readonly property string activeSignatureHtml: {
+    var entry = Accounts.find(accountList, activeAccountId)
+    return entry ? String(entry.signatureHtml || "") : ""
+  }
   readonly property string calendarAccountId: current && String(current.accountId || "") !== ""
     ? String(current.accountId) : "__no_google_account__"
 
@@ -428,6 +432,13 @@ Item {
 
   function setAccountLabel(id, text) {
     var next = Accounts.setLabel(accountList, id, text)
+    if (Accounts.serialize(next) === Accounts.serialize(accountList)) return
+    accountList = next
+    saveAccounts()
+  }
+
+  function setAccountSignatureHtml(id, html) {
+    var next = Accounts.setSignatureHtml(accountList, id, html)
     if (Accounts.serialize(next) === Accounts.serialize(accountList)) return
     accountList = next
     saveAccounts()
@@ -712,7 +723,8 @@ Item {
         // The name as it was typed, empty when none was, so a field editing
         // it shows what is there rather than the address standing in for it.
         label: String(accounts[i].label || ""),
-        signature: String(accounts[i].signature || "")
+        signature: String(accounts[i].signature || ""),
+        signatureHtml: String(accounts[i].signatureHtml || "")
       })
     }
     return out
@@ -959,8 +971,22 @@ Item {
       if (current) current.fail("Another message is still being sent")
       return false
     }
-    return current ? current.send(fields) : false
+    return current ? current.send(withSignatures(fields, current)) : false
   }
+  // The signatures ride with the fields rather than being read by the
+  // account: the account holds no copy of its own entry, and the window
+  // holds no signature. Both readings — text and markup — go, because the
+  // message carries both.
+  function withSignatures(fields, host) {
+    var values = {}
+    var source = fields || ({})
+    for (var key in source) values[key] = source[key]
+    var entry = Accounts.find(accountList, host ? String(host.accountId || "") : activeAccountId)
+    values.signature = entry ? String(entry.signature || "") : ""
+    values.signatureHtml = entry ? String(entry.signatureHtml || "") : ""
+    return values
+  }
+
   function saveDraft(fields, callback) {
     var values = fields || ({})
     var target = String(values.accountId || "")
@@ -969,7 +995,7 @@ Item {
       if (typeof callback === "function") callback(null, "The mailbox for this draft is unavailable")
       return null
     }
-    return host.saveDraft(values, callback)
+    return host.saveDraft(withSignatures(values, host), callback)
   }
   function fail(text) { if (current) current.fail(text) }
   function note(text) { if (current) current.note(text) }

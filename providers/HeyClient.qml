@@ -639,6 +639,11 @@ Item {
     return handle
   }
 
+  function deleteDraft(messageId, callback) {
+    if (typeof callback === "function") Qt.callLater(function() { if (root) callback(null, "") })
+    return newHandle()
+  }
+
   function saveDraft(payload, callback) {
     var handle = newHandle()
     var raw = payload && payload.raw ? String(payload.raw) : ""

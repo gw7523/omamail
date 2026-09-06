@@ -87,7 +87,7 @@ used to exist, and they had.
 |---|---|---|---|
 | `cursorDown` | `j`, `Down` | mail | Move down |
 | `cursorUp` | `k`, `Up` | mail | Move up |
-| `open` | `Return`, `o` | mail | Open the selected message |
+| `open` | `Return`, `Enter`, `o` | mail | Open the selected message |
 | `backToList` | `u` | reader | Back to the list |
 | `nextMember` | `n` | reader | Next message in the conversation |
 | `previousMember` | `p` | reader | Previous message in the conversation |
@@ -112,7 +112,7 @@ used to exist, and they had.
 | `calendarToday` | `t` | calendar | Go to today |
 | `calendarWeek` | `w` | calendar | Show week view |
 | `calendarMonth` | `m` | calendar | Show month view |
-| `send` | `Ctrl+Return` | compose | Send |
+| `send` | `Ctrl+Return`, `Ctrl+Enter` | compose | Send |
 | `undoSend` | `Alt+Z` | all | Undo send |
 | `search` | `/` | mail | Search |
 | `goMailbox` | `Ctrl+1`, `Ctrl+2`, `Ctrl+3`, `Ctrl+4`, `Ctrl+5`, `Ctrl+6`, `Ctrl+7`, `Ctrl+8`, `Ctrl+9`, `Ctrl+0` | mail | Go to that mailbox |
@@ -135,7 +135,7 @@ used to exist, and they had.
 The bare `?` opens the complete key sheet from mail. In a text-entry context it
 stays text, like every other bare character except `Escape`.
 
-In Drafts, `Enter` and `o` preview the selected draft. Press `c` to edit it. In every other mailbox, `c` starts a new message.
+In Drafts, `Enter`, `o` and `c` open the selected draft in the composer, with what was written in it; a click previews it, as in every other mailbox. Leaving the composer saves the draft back over the one it came from; sending it takes that draft away. In every other mailbox, `c` starts a new message.
 
 `n` and `p` walk the conversation rail beside the message on a provider whose listing collapses to conversations, opening the next and previous member in the same reader and stopping at the ends. The rail runs newest at the top, so `n` opens the stop below the open message, which is the older one, and `p` the stop above it, the newer — the keys follow the rail as it is drawn, the way `j` and `k` follow the list. They move the reader and nothing else: `j` and `k` go on moving the list cursor underneath, because the cursor and the open message are two different things. A message whose conversation has one member draws no rail, and both keys then do nothing. A right-click on a stop opens the same menu a row has — reply, archive, trash, spam, read, star — for that one message: the action reaches the member alone, where the same verb on the row reaches every counted member, and if the open message is the one taken out of the view the reader moves to the stop beside it, the newer one above or else the older below.
 
