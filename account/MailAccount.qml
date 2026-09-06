@@ -1691,30 +1691,38 @@ Item {
     pendingActionQuery = actionQuery
     pendingAction = action
 
-    var done = function(payload, error) {
+    // A failure is not proof that nothing changed. One request per message
+    // reports each on its own, and only the rows whose request failed go
+    // back where they were. A provider that answers a whole batch with one
+    // word — Gmail's batchModify, IMAP's plan across folders — may have done
+    // part of it, so its failure is answered by reading the list again from
+    // the server rather than by restoring rows the server may no longer have.
+    var done = function(payload, error, failedIds) {
       root.pendingAction = ""
       root.pendingActionQuery = ""
       if (error) {
-        if (root.cacheKey === actionQuery
+        var partial = Array.isArray(failedIds)
+        if (partial && root.cacheKey === actionQuery
             && !root.deferredLoadCleared(actionQuery)) {
-          root.nextPageToken = actionToken
-          root.messages = before
-          root.previewMessages = beforePreview
+          root.messages = Model.restoreRows(root.messages, before, failedIds)
+          root.previewMessages = Model.restoreRows(root.previewMessages, beforePreview, failedIds)
           if (!selectedGone && beforeSelected && beforeSelected.id === root.selectedId)
             root.selectedMessage = beforeSelected
-          root.inboxUnread = Math.max(0, root.inboxUnread - unreadDelta)
           if (!interrupted) root.rememberList()
-        } else if (root.cacheStore.loaded) {
-          root.cacheStore.putQuery(actionQuery, ({
-            summaries: before,
-            estimate: actionEstimate,
-            nextPageToken: actionToken
-          }))
+          root.refreshCounts()
+          root.fail(Model.batchFailureNote(listed.length, failedIds.length, root.actionLabel(action), error))
+          return
         }
         root.fail(error)
         if (root.resumeDeferredListLoad(actionQuery, error)) return
-        if (interrupted && root.cacheKey === actionQuery)
-          root.loadMessages(false, true, error)
+        if (root.cacheKey === actionQuery) root.loadMessages(false, true, error)
+        else if (root.cacheStore.loaded) {
+          // Not on screen: the old page goes back into the cache so the next
+          // visit reads the server rather than the optimistic guess.
+          root.cacheStore.putQuery(actionQuery, ({
+            summaries: before, estimate: actionEstimate, nextPageToken: actionToken
+          }))
+        }
         return
       }
       root.note(Model.batchNote(listed.length, root.actionLabel(action)))
@@ -1747,14 +1755,20 @@ Item {
     if (action === "trash" || action === "untrash") {
       var remaining = listed.length
       var firstError = ""
-      var each = function(payload, error) {
-        if (error && firstError === "") firstError = String(error)
-        remaining--
-        if (remaining === 0) done(null, firstError)
+      var failed = []
+      var each = function(id) {
+        return function(payload, error) {
+          if (error) {
+            if (firstError === "") firstError = String(error)
+            failed.push(id)
+          }
+          remaining--
+          if (remaining === 0) done(null, firstError, failed)
+        }
       }
       for (var t = 0; t < listed.length; t++) {
-        if (action === "trash") api.trashMessage(listed[t], each)
-        else api.untrashMessage(listed[t], each)
+        if (action === "trash") api.trashMessage(listed[t], each(listed[t]))
+        else api.untrashMessage(listed[t], each(listed[t]))
       }
     } else {
       api.batchModify(listed, change.add, change.remove, done)
@@ -2795,11 +2809,18 @@ Item {
 
   // The client takes the manager as a required property, so it cannot be built
   // until there is one.
+  // The offscreen harness hands in a client of its own here, so a batch can
+  // be driven against a provider whose every answer is decided by the test
+  // — one message refused, another accepted — without a server or a
+  // credential. Null everywhere else, and the provider's own client loads.
+  property Component clientOverride: null
+
   Loader {
     id: apiLoader
     active: !!authLoader.item
-    sourceComponent: root.providerId === "imap" ? imapClientComponent
-      : (root.providerId === "hey" ? heyClientComponent : gmailClientComponent)
+    sourceComponent: root.clientOverride ? root.clientOverride
+      : (root.providerId === "imap" ? imapClientComponent
+        : (root.providerId === "hey" ? heyClientComponent : gmailClientComponent))
   }
 
   Component {

@@ -1377,3 +1377,37 @@ function monitoredNote(grown) {
   var more = list.length - parts.length
   return parts.join(", ") + (more > 0 ? " and " + more + " more" : "")
 }
+
+// The rows whose request failed, put back where they were: each is taken
+// from the list as it stood before the action and inserted at its old
+// place, or as near as the rows still around it allow. Rows whose request
+// succeeded are left as the action left them.
+function restoreRows(current, before, failedIds) {
+  var now = Array.isArray(current) ? current.slice() : []
+  var was = Array.isArray(before) ? before : []
+  var ids = Array.isArray(failedIds) ? failedIds : []
+  for (var i = 0; i < was.length; i++) {
+    var row = was[i]
+    if (!row || ids.indexOf(String(row.id)) < 0) continue
+    var at = indexById(now, row.id)
+    if (at >= 0) { now[at] = row; continue }
+    // The first later row of the old order that is still present decides
+    // where this one goes back; none means the end.
+    var insertAt = now.length
+    for (var j = i + 1; j < was.length; j++) {
+      var later = indexById(now, was[j].id)
+      if (later >= 0) { insertAt = later; break }
+    }
+    now.splice(insertAt, 0, row)
+  }
+  return now
+}
+
+// "2 of 5 could not be moved to trash: <reason>" — the count that failed,
+// the count asked, the action in the words its note uses, and why.
+function batchFailureNote(asked, failed, actionLabel, error) {
+  var label = String(actionLabel || "")
+  var verb = label === "" ? "acted on" : label.charAt(0).toLowerCase() + label.slice(1)
+  var reason = String(error || "").trim()
+  return failed + " of " + asked + " could not be " + verb + (reason === "" ? "" : ": " + reason)
+}

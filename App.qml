@@ -212,6 +212,13 @@ Item {
   // the list under it changes. Only the list acts on it: in the reader there
   // is one message and it is the one open.
   property var checkedIds: []
+  // The mailbox the ticks belong to. An IMAP id is a UID and a folder, unique
+  // only inside one account, so a tick carried across an account switch
+  // would name whatever the other mailbox keeps under the same id — and a
+  // batch dispatched through it would act on that. The ticks are bound to
+  // the account they were made in and dropped the moment it changes, from
+  // any path, before a batch can run.
+  property string checkedAccountId: ""
   // Ticked rows mean the selection whenever the list is on screen: alone, or
   // beside the reader in a wide window. A plain click opens a message and
   // puts the window in the reader view, so a click, a Shift+click and `d`
@@ -223,8 +230,22 @@ Item {
   function toggleCheck(id) {
     var key = String(id || "")
     if (key === "") return false
+    claimChecks()
     checkedIds = Model.toggleId(checkedIds, key)
     return true
+  }
+
+  // Ticks made in another mailbox are not this one's: start over.
+  function claimChecks() {
+    var owner = service ? String(service.activeAccountId || "") : ""
+    if (checkedAccountId !== owner) checkedIds = []
+    checkedAccountId = owner
+  }
+
+  function clearChecksIfForeign() {
+    var owner = service ? String(service.activeAccountId || "") : ""
+    if (checkedIds.length > 0 && checkedAccountId !== owner) checkedIds = []
+    checkedAccountId = owner
   }
 
   // Shift+click: everything from the cursor to here joins the selection, and
@@ -233,6 +254,7 @@ Item {
     if (!service) return false
     var key = String(id || "")
     if (key === "") return false
+    claimChecks()
     checkedIds = Model.unionIds(checkedIds, Model.idsBetween(service.messages, cursorId, key))
     cursorId = key
     return true
@@ -242,6 +264,7 @@ Item {
   // means "all of these" has to be able to mean "none of them" as well.
   function checkAll() {
     if (!service) return false
+    claimChecks()
     var all = Model.allIds(service.messages)
     checkedIds = Model.retainIds(checkedIds, service.messages).length === all.length ? [] : all
     return true
@@ -252,6 +275,12 @@ Item {
   // outlived the action would be one keystroke from repeating it.
   function actOnChecked(action) {
     if (!service || checkedIds.length === 0) return false
+    // Never through another mailbox: a switch that reached the service by
+    // any road drops the ticks before a batch can be built from them.
+    if (checkedAccountId !== String(service.activeAccountId || "")) {
+      checkedIds = []
+      return false
+    }
     var ids = checkedIds.slice()
     var leaves = !Model.survivesAction(service.mailboxKey, action,
       service.rawQuery, service.hasLabels, service.rawLabelId)
@@ -1079,7 +1108,15 @@ Item {
 
     function onSidebarWidthChanged() { root.sidebarWidth = root.service.sidebarWidth }
     function onListWidthChanged() { root.listWidth = root.service.listWidth }
+    // The cursor is an id too, and an IMAP id names a different message in
+    // another mailbox: it is dropped with the ticks, so the next `d` after
+    // a switch acts on nothing rather than on whatever shares the id.
+    function onActiveAccountIdChanged() {
+      root.clearChecksIfForeign()
+      root.cursorId = ""
+    }
     function onMessagesChanged() {
+      root.clearChecksIfForeign()
       root.cursorId = Model.cursorAfterReload(
         root.service ? root.service.messages : [], root.cursorId)
       root.checkedIds = Model.retainIds(root.checkedIds,

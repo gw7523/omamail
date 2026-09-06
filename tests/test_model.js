@@ -988,3 +988,17 @@ assert.strictEqual(model.monitoredNote([{ name: "Receipts", delta: 3 }]), "3 new
 assert.strictEqual(model.monitoredNote([{ name: "A", delta: 1 }, { name: "B", delta: 4 }, { name: "C", delta: 2 }]),
   "4 new in B, 2 new in C and 1 more")
 assert.strictEqual(model.monitoredNote([]), "")
+
+// A partly failed batch puts back only the rows that failed, in their old places.
+{
+  const before = [{ id: "a" }, { id: "b" }, { id: "c" }, { id: "d" }]
+  const afterAction = [{ id: "a" }, { id: "d" }]
+  deepEqual(model.restoreRows(afterAction, before, ["c"]).map(function (r) { return r.id }), ["a", "c", "d"])
+  deepEqual(model.restoreRows(afterAction, before, ["b", "c"]).map(function (r) { return r.id }), ["a", "b", "c", "d"])
+  deepEqual(model.restoreRows([{ id: "a" }], before, ["d"]).map(function (r) { return r.id }), ["a", "d"], "no later row left means the end")
+  deepEqual(model.restoreRows([{ id: "a", unread: false }], [{ id: "a", unread: true }], ["a"]), [{ id: "a", unread: true }],
+    "a row still listed is put back as it was")
+  deepEqual(model.restoreRows(afterAction, before, []).map(function (r) { return r.id }), ["a", "d"])
+  assert.strictEqual(model.batchFailureNote(5, 2, "Moved to trash", "server said no"), "2 of 5 could not be moved to trash: server said no")
+  assert.strictEqual(model.batchFailureNote(3, 1, "Archived", ""), "1 of 3 could not be archived")
+}
