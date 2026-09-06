@@ -313,7 +313,11 @@ function setupSettings(raw) {
     smtpPort: values.smtpPort,
     username: trimmed(values.username) || trimmed(values.address),
     aliases: values.aliases,
-    insecure: isLoopback(values.imapHost)
+    insecure: isLoopback(values.imapHost),
+    auth: values.auth,
+    tokenAccount: values.tokenAccount,
+    send: values.send,
+    graphTokenAccount: values.graphTokenAccount
   })
 }
 
@@ -1380,6 +1384,11 @@ function transportError(status, response, detail, fallback) {
     if (trimmed(served) !== "") return responseError(0, served, fallback)
   }
   return responseError(status, detail, fallback)
+}
+
+function isRejectedCredentials(status, response, detail) {
+  var message = transportError(status || 0, response || "", detail || "", "")
+  return /rejected that username or password/i.test(message)
 }
 
 // A password can end up in a curl error line, in a server's echo of a failed

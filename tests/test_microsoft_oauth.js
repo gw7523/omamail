@@ -12,6 +12,10 @@ deepEqual(outlook.settings("jane@hotmail.com"), {
   smtpPort: 587,
   username: "jane@hotmail.com",
   aliases: [],
+  auth: "",
+  tokenAccount: "",
+  send: "",
+  graphTokenAccount: "",
   insecure: false
 })
 assert.strictEqual(microsoft.isValidClientId(clientId), true)
