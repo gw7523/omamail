@@ -2014,8 +2014,34 @@ Item {
     return true
   }
 
+  // A mailbox whose token was just refused is not ready until the next
+  // lookup answers — and the next lookup is asked for by the next request.
+  // A save or a send that arrived in that window failed as "not ready" for
+  // a mailbox that was signed in a second ago. So the credentials are asked
+  // for first, which is what any other request does, and the work goes on
+  // once they are back; a mailbox with nothing to look up fails at once.
+  function whenReady(callback) {
+    if (ready) { callback(true); return }
+    if (!auth || !auth.configured || auth.loginBusy || typeof auth.withCredentials !== "function") {
+      callback(false)
+      return
+    }
+    auth.withCredentials(function(credentials, error) {
+      if (!root) return
+      callback(!!credentials && root.ready)
+    })
+  }
+
   function saveDraft(fields, callback) {
-    if (!ready || !api || typeof api.saveDraft !== "function") {
+    if (!ready) {
+      whenReady(function(ok) {
+        if (!root) return
+        if (ok) root.saveDraft(fields, callback)
+        else if (typeof callback === "function") callback(null, "The mailbox is not ready to save drafts")
+      })
+      return null
+    }
+    if (!api || typeof api.saveDraft !== "function") {
       if (typeof callback === "function") callback(null, "The mailbox is not ready to save drafts")
       return null
     }
@@ -2060,7 +2086,17 @@ Item {
   }
 
   function send(fields) {
-    if (!ready || sending || sendPending) return false
+    if (sending || sendPending) return false
+    if (!ready) {
+      // Asked for its credentials first, like a save: a token refused a
+      // moment ago is looked up again rather than the send refused.
+      whenReady(function(ok) {
+        if (!root) return
+        if (ok) root.send(fields)
+        else root.reportSendFailure("The mailbox is not ready to send")
+      })
+      return true
+    }
     var values = fields || ({})
     var files = Array.isArray(values.attachments) ? values.attachments : []
     var hasFiles = false
