@@ -129,6 +129,10 @@ Item {
 
   property string mailboxKey: "inbox"
   property string searchQuery: ""
+  // The provider-shaped form of a search that did not come from typing: the
+  // address menu builds a FROM criterion that no search box would wrap
+  // again. Empty while `searchQuery` is what the user typed.
+  property string searchRaw: ""
   // A query picked from a list rather than typed: a Gmail label, an IMAP
   // folder. Kept apart from `searchQuery` because that one gets shaped into a
   // search — an IMAP folder wrapped in a TEXT search would go looking for the
@@ -371,6 +375,7 @@ Item {
   // are search operators, IMAP's name a folder. Opaque from here on — it is
   // handed back to the client that produced it, and used as a cache key.
   readonly property string effectiveQuery: rawQuery !== "" ? rawQuery
+    : searchRaw !== "" ? searchRaw
     : Provider.query(providerId, mailboxKey, searchQuery, defaultQuery)
   readonly property bool hasMore: nextPageToken !== ""
   // A cached search can already have rows on screen while this stays true.
@@ -2622,7 +2627,7 @@ Item {
     api.getLabels(function(result, error) {
       if (!root || error) return
       root.labels = result
-      root.cacheStore.putLabels(result)
+      cacheStore.putLabels(result)
       if (root.followLabelPath !== "") {
         var moved = root.labelByPath(root.followLabelPath)
         root.followLabelPath = ""
@@ -2638,6 +2643,7 @@ Item {
     if (mailboxKey === key && searchQuery === "" && rawQuery === "") return
     mailboxKey = String(key || "inbox")
     searchQuery = ""
+    searchRaw = ""
     rawQuery = ""
     rawLabelId = ""
     clearSelection()
@@ -2649,9 +2655,26 @@ Item {
 
   function search(text) {
     var query = String(text || "").trim()
-    if (query === searchQuery && rawQuery === "") return
+    if (query === searchQuery && searchRaw === "" && rawQuery === "") return
     searchQuery = query
+    searchRaw = ""
     // Typing in the search box leaves whatever label was selected.
+    rawQuery = ""
+    rawLabelId = ""
+    clearSelection()
+    messages = []
+    listLoaded = false
+    loadMessages(false)
+  }
+
+  // A search built by the app rather than typed: `query` is already in the
+  // provider's own words and `text` is what the search box shows for it.
+  function searchAddress(query, text) {
+    var raw = String(query || "").trim()
+    if (raw === "") return
+    if (raw === searchRaw && rawQuery === "") return
+    searchQuery = String(text || raw).trim()
+    searchRaw = raw
     rawQuery = ""
     rawLabelId = ""
     clearSelection()
@@ -2667,6 +2690,7 @@ Item {
     var id = String(labelId || "")
     if (query === "" || (query === rawQuery && id === rawLabelId)) return
     searchQuery = ""
+    searchRaw = ""
     rawQuery = query
     rawLabelId = id
     clearSelection()

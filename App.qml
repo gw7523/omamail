@@ -289,8 +289,12 @@ Item {
     // acting on it alone does: it is about to leave this list.
     var wasOpen = currentView === "reader" && ids.indexOf(service.selectedId) >= 0
     if (!service.actMany(ids, action)) return false
-    checkedIds = []
+    // Rows that stay stay ticked: marking a selection read is usually the
+    // first of several things done to it. Rows that leave take their ticks
+    // with them — a selection that outlived the action would be one
+    // keystroke from repeating it on whatever took the rows' places.
     if (!leaves) return true
+    checkedIds = []
     if (wasOpen) {
       if (next !== "") openMessage(next)
       else backToList()
@@ -1305,7 +1309,7 @@ Item {
     // starts with a dash is not an address.
     if (text === "" || text.charAt(0) === "-") return
     Quickshell.execDetached(["wl-copy", text])
-    notice = "Copied " + text
+    root.notice = "Copied " + text
     noticeTimer.restart()
   }
 
@@ -1313,7 +1317,9 @@ Item {
     if (!service) return
     var query = Provider.addressQuery(service.providerId, field, address)
     if (query === "") return
-    service.search(query)
+    var text = (field === "to" ? "to: " : "from: ") + String(address || "").trim()
+    service.searchAddress(query, text)
+    searchBar.setQuery(text)
     backToList()
   }
 

@@ -1064,6 +1064,7 @@ Item {
 
   function selectMailbox(key) { if (current) current.selectMailbox(key) }
   function search(text) { if (current) current.search(text) }
+  function searchAddress(query, text) { if (current) current.searchAddress(query, text) }
   function selectLabel(name, labelId) {
     if (current) current.selectLabel(name, labelId)
   }

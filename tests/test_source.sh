@@ -637,8 +637,10 @@ for client in providers/GmailApiClient.qml providers/HeyClient.qml providers/Ima
 done
 grep -q 'if (ids.length > 0) progress({' providers/ImapClient.qml \
   || fail "IMAP search windows must report ids before the final page"
-grep -q 'Imap\.uidCeilingCommand()' providers/ImapClient.qml \
+grep -q 'Imap\.topUidCommand(count)' providers/ImapClient.qml \
   || fail "interactive IMAP search must not wait for the complete UID snapshot"
+! grep -q '"[A-Z ]*FETCH \*:\*' providers/ImapProtocol.js providers/ImapClient.qml \
+  || fail "curl drops the untagged answer to a one-message FETCH: read the ceiling numerically"
 grep -q 'Imap\.searchCommands(criteria, snapshot, nextUid)' providers/ImapClient.qml \
   || fail "a sparse interactive search must reuse a UID snapshot after its first window"
 grep -q 'streamedSummaryBatch' providers/ImapClient.qml \
