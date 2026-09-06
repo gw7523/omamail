@@ -393,8 +393,17 @@ Item {
     // a half-added mailbox could never be the one on screen, and setup would
     // have nothing to run in.
     if (!next && accountHosts.count > 0) next = accountHosts.objectAt(0)
+    var switching = !!current && next !== current
     if (next !== current) current = next
     applyLiveHosts()
+    // A switch lands on the inbox whatever the account was left looking at:
+    // the other account's folder is not where the eye expects to arrive, and
+    // the one this account was on last is no longer news. Startup keeps the
+    // account's own state, since nothing was being looked at before it; a
+    // merged view keeps its own mailbox, which is not any one account's.
+    if (switching && !unified && current && typeof current.selectMailbox === "function"
+        && (current.mailboxKey !== "inbox" || current.rawQuery !== "" || current.searchQuery !== ""))
+      current.selectMailbox("inbox")
   }
 
   // Which mailboxes are live, which is what earns a list.
