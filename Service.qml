@@ -1064,16 +1064,59 @@ Item {
     return null
   }
   readonly property bool sending: !!sendingHost
+  // The account whose parked send is newest: the one Undo takes back, and
+  // whose countdown the toast shows.
   readonly property var pendingSendHost: {
+    var newest = null
     for (var i = 0; i < accountHosts.count; i++) {
       var host = accountHosts.objectAt(i)
-      if (host && host.sendPending) return host
+      if (!host || !host.sendPending) continue
+      if (!newest || host.latestSend.order > newest.latestSend.order
+          || (host.latestSend.order === newest.latestSend.order
+            && host.latestSend.queuedAt > newest.latestSend.queuedAt)) newest = host
     }
-    return null
+    return newest
   }
   readonly property bool sendPending: !!pendingSendHost
   readonly property int sendSecondsRemaining: pendingSendHost
     ? pendingSendHost.sendSecondsRemaining : 0
+  readonly property int sendPendingCount: {
+    var total = 0
+    for (var i = 0; i < accountHosts.count; i++) {
+      var host = accountHosts.objectAt(i)
+      if (host) total += host.sendPendingCount
+    }
+    return total
+  }
+  readonly property int sendingCount: {
+    var total = 0
+    for (var i = 0; i < accountHosts.count; i++) {
+      var host = accountHosts.objectAt(i)
+      if (host && host.sending) total += 1
+    }
+    return total
+  }
+  readonly property int runningActionCount: {
+    var total = 0
+    for (var i = 0; i < accountHosts.count; i++) {
+      var host = accountHosts.objectAt(i)
+      if (host && host.pendingAction !== "") total += 1
+    }
+    return total
+  }
+  readonly property int queuedActionCount: {
+    var total = 0
+    for (var i = 0; i < accountHosts.count; i++) {
+      var host = accountHosts.objectAt(i)
+      if (host) total += host.queuedActionCount
+    }
+    return total
+  }
+  // What is still in flight across every account, for the status line.
+  readonly property string activityStatus: Model.activityStatus({
+    sending: sendingCount, queuedSends: sendPendingCount,
+    running: runningActionCount, waiting: queuedActionCount
+  })
   readonly property string lastError: current ? current.lastError : ""
   readonly property string actionStatus: current ? current.actionStatus : ""
   readonly property string signInProgress: current ? current.signInProgress : ""
@@ -1117,19 +1160,16 @@ Item {
   function markAllRead() { if (current) current.markAllRead() }
   function actMany(ids, action) { return current ? current.actMany(ids, action) : false }
   function send(fields) {
-    // The button has the same guard, but Ctrl+Return reaches this function
-    // directly. Enforce the one-global-parked-draft invariant at the action
-    // boundary so another account cannot overwrite it.
-    if (pendingSendHost) {
-      if (current) current.fail("Another message is waiting to be sent")
-      return false
-    }
-    if (sendingHost) {
-      if (current) current.fail("Another message is still being sent")
-      return false
-    }
-    return current ? current.send(withSignatures(fields, current)) : false
+    // Every send is parked in its own account's line; one already waiting
+    // or going is no reason to refuse the next.
+    if (!current) return false
+    // Named here rather than by the account, so two accounts' sends never
+    // share a name and the composer restores the draft of the one undone.
+    sendSequence += 1
+    return current.send(withSignatures(fields, current), "send-" + sendSequence, sendSequence)
   }
+
+  property int sendSequence: 0
   // The signatures ride with the fields rather than being read by the
   // account: the account holds no copy of its own entry, and the window
   // holds no signature. Both readings — text and markup — go, because the
@@ -1290,16 +1330,16 @@ Item {
     callback("", "The Google calendar account is not signed in")
   }
 
-  signal replySent()
-  signal replyFailed()
+  signal replySent(string sendId)
+  signal replyFailed(string sendId)
 
   // A queued send keeps running on its own account when the visible mailbox
   // changes. Put that account back in front before App restores the draft, so
   // a retry cannot be addressed to whichever mailbox happened to be visible.
-  function forwardReplyFailure(index) {
+  function forwardReplyFailure(index, sendId) {
     var host = accountAt(index)
     if (host && host !== current) switchToIndex(index)
-    replyFailed()
+    replyFailed(String(sendId || ""))
   }
 
   // ------------------------------------------------------------- instances
@@ -1382,8 +1422,8 @@ Item {
       onServerSettingsLearned: function(jmap) { root.configureAccount(index, { jmap: jmap }) }
       onReadyChanged: root.recount()
       onInboxUnreadChanged: root.recount()
-      onReplySent: root.replySent()
-      onReplyFailed: root.forwardReplyFailure(index)
+      onReplySent: function(sendId) { root.replySent(String(sendId || "")) }
+      onReplyFailed: function(sendId) { root.forwardReplyFailure(index, sendId) }
 
       Component.onCompleted: Qt.callLater(root.refreshCurrent)
       Component.onDestruction: Qt.callLater(root.refreshCurrent)

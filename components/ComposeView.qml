@@ -36,9 +36,14 @@ DropArea {
   readonly property int formLabelGap: Style.space(10)
 
   property bool opened: false
-  property bool parkedForSend: false
-  // The timer owns this draft while the visible composer remains free.
-  property var pendingDraft: null
+  // Drafts parked for their send's undo window, oldest first, each beside
+  // the name of the send it belongs to. The timer owns them while the
+  // visible composer stays free for the next message.
+  property var parkedDrafts: []
+  readonly property bool parkedForSend: parkedDrafts.length > 0
+  // The newest parked draft: what recovery keeps, and what Undo takes back.
+  readonly property var pendingDraft: parkedDrafts.length > 0
+    ? parkedDrafts[parkedDrafts.length - 1].draft : null
   // Undo temporarily replaces a newer draft. Closing or resending returns here.
   property var interruptedDraft: null
   // A failed provider save stays reachable after Back or Escape.
@@ -313,14 +318,14 @@ DropArea {
 
   function reset() {
     clearCurrentDraft(true)
-    forgetOwned(pendingDraft ? pendingDraft.draftAttachments : [])
+    for (var p = 0; p < parkedDrafts.length; p++)
+      forgetOwned(parkedDrafts[p].draft ? parkedDrafts[p].draft.draftAttachments : [])
     forgetOwned(interruptedDraft ? interruptedDraft.draftAttachments : [])
     for (var i = 0; i < recoveryDrafts.length; i++)
       forgetOwned(recoveryDrafts[i] ? recoveryDrafts[i].draftAttachments : [])
-    pendingDraft = null
+    parkedDrafts = []
     interruptedDraft = null
     recoveryDrafts = []
-    parkedForSend = false
     restoreRevision = 0
     restoreFlashOpacity = 0
   }
@@ -668,11 +673,12 @@ DropArea {
     recoveryDrafts = queued
   }
 
-  function parkForSend() {
-    pendingDraft = snapshotDraft()
+  function parkForSend(sendId) {
+    var parked = parkedDrafts.slice()
+    parked.push({ sendId: String(sendId || ""), draft: snapshotDraft() })
+    parkedDrafts = parked
     clearCurrentDraft(false)
     opened = false
-    parkedForSend = true
     if (interruptedDraft) {
       var held = interruptedDraft
       interruptedDraft = null
@@ -682,13 +688,33 @@ DropArea {
     }
   }
 
-  function resumePendingSend() {
-    if (!parkedForSend || !pendingDraft) return false
+  // The parked draft a send names — or, for a service that does not name
+  // its sends, the newest for an undo and the oldest for an answer, since
+  // sends go in the order they were asked.
+  function takeParked(sendId, oldest) {
+    if (parkedDrafts.length === 0) return null
+    var parked = parkedDrafts.slice()
+    var index = -1
+    var id = String(sendId || "")
+    if (id !== "") {
+      for (var i = 0; i < parked.length; i++) {
+        if (parked[i].sendId === id) {
+          index = i
+          break
+        }
+      }
+    }
+    if (index < 0) index = oldest ? 0 : parked.length - 1
+    var entry = parked.splice(index, 1)[0]
+    parkedDrafts = parked
+    return entry.draft
+  }
+
+  function resumePendingSend(sendId, oldest) {
+    var draft = takeParked(sendId, oldest === true)
+    if (!draft) return false
     if (opened) interruptedDraft = snapshotDraft()
     clearCurrentDraft(false)
-    var draft = pendingDraft
-    pendingDraft = null
-    parkedForSend = false
     restoreDraft(draft)
     restoreRevision++
     restoreFlash.restart()
@@ -708,11 +734,10 @@ DropArea {
     return true
   }
 
-  function completePendingSend() {
-    if (!parkedForSend || !pendingDraft) return false
-    forgetOwned(pendingDraft.draftAttachments)
-    pendingDraft = null
-    parkedForSend = false
+  function completePendingSend(sendId) {
+    var draft = takeParked(sendId, true)
+    if (!draft) return false
+    forgetOwned(draft.draftAttachments)
     return true
   }
 
@@ -743,7 +768,7 @@ DropArea {
       threadId: root.mode === "forward" ? "" : root.threadId,
       inReplyTo: root.mode === "forward" ? "" : root.inReplyTo
     }))
-    if (accepted === true) parkForSend()
+    if (accepted) parkForSend(accepted === true ? "" : String(accepted))
   }
 
   function allOutgoingAttachments() {
@@ -1807,10 +1832,12 @@ DropArea {
       IconTextButton {
         iconName: "send"
         tooltipText: "Send · Ctrl+Enter"
-        text: root.service && root.service.sending ? "Sending" : "Send"
+        // A send in flight or parked is no reason to hold the next: each is
+        // parked in its account's line and goes in turn.
+        text: "Send"
         foreground: root.textColor
         fontFamily: root.panelFontFamily
-        enabled: !!root.service && !root.service.sending && !root.service.sendPending
+        enabled: !!root.service
           && !root.forwardAttachmentsLoading && root.forwardAttachmentError === ""
         onClicked: root.submit()
       }

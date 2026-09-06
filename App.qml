@@ -806,8 +806,8 @@ Item {
   // undo window. `resumePendingSend` moves that newer one to
   // `interruptedDraft`, and saving it is what keeps reopening the parked one
   // from overwriting it.
-  function restoreParkedDraft() {
-    if (!compose.resumePendingSend()) return false
+  function restoreParkedDraft(sendId, oldest) {
+    if (!compose.resumePendingSend(sendId, oldest)) return false
     var interrupted = compose.interruptedDraft
     var fields = compose.interruptedFields()
     if (!interrupted || !fields || !service) return true
@@ -825,8 +825,10 @@ Item {
   }
 
   function undoPendingSend() {
-    if (!service || !service.undoSend()) return false
-    root.restoreParkedDraft()
+    if (!service) return false
+    var undone = service.undoSend()
+    if (!undone) return false
+    root.restoreParkedDraft(undone === true ? "" : String(undone), false)
     return true
   }
 
@@ -1151,8 +1153,8 @@ Item {
   Connections {
     target: root.service
     ignoreUnknownSignals: true
-    function onReplySent() {
-      if (!compose.completePendingSend()) return
+    function onReplySent(sendId) {
+      if (!compose.completePendingSend(sendId)) return
       if (compose.opened) root.scheduleComposeRecovery()
       else root.clearComposeRecovery()
     }
@@ -1161,8 +1163,8 @@ Item {
     // composer that stays shut leaves the writer with a sentence about a
     // message they can no longer see. Recovery is scheduled rather than
     // cleared for the same reason — the words are still unsent.
-    function onReplyFailed() {
-      if (!root.restoreParkedDraft()) return
+    function onReplyFailed(sendId) {
+      if (!root.restoreParkedDraft(sendId, true)) return
       root.scheduleComposeRecovery()
     }
     // Every time the list is replaced — first arrival, a mailbox switch, a
@@ -2362,6 +2364,8 @@ Item {
         z: 80
         visible: !!root.service && root.service.sendPending && compose.parkedForSend
         secondsRemaining: root.service ? root.service.sendSecondsRemaining : 0
+        queuedCount: root.service && root.service.sendPendingCount !== undefined
+          ? root.service.sendPendingCount : 1
         textColor: root.foreground
         dimColor: root.dim
         accentColor: root.accent
@@ -2446,9 +2450,27 @@ Item {
           font.bold: true
         }
 
+        // What is still in flight — sends parked or going, actions running or
+        // waiting their turn — said once, here, while any of it is true.
+        Text {
+          id: activityLabel
+          objectName: "status-activity"
+          anchors.left: selectionLabel.visible ? selectionLabel.right
+            : (railToggle.visible ? railToggle.right : parent.left)
+          anchors.leftMargin: Style.space(8)
+          anchors.verticalCenter: parent.verticalCenter
+          visible: text !== "" && !root.showPage
+          text: root.service && root.service.activityStatus !== undefined
+            ? root.service.activityStatus : ""
+          color: root.dim
+          font.family: root.fontFamily
+          font.pixelSize: Style.font.caption
+        }
+
         Item {
           id: accountSlot
-          anchors.left: selectionLabel.visible ? selectionLabel.right
+          anchors.left: activityLabel.visible ? activityLabel.right
+            : selectionLabel.visible ? selectionLabel.right
             : (railToggle.visible ? railToggle.right : parent.left)
           // The rail's labels sit 9 after their glyph; the toggle's box runs
           // past its glyph by half its slack, so the text starts that much

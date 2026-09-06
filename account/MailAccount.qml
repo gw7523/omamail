@@ -392,10 +392,17 @@ Item {
   property string pendingActionQuery: ""
   property var deferredListLoad: null
   property var queuedActions: []
+  readonly property int queuedActionCount: queuedActions.length
   property bool sending: false
-  property var pendingSend: null
+  // Sends parked for their undo window, oldest first. Each goes when its own
+  // moment comes, one at a time; Undo takes back the newest.
+  property var pendingSends: []
+  property int sendSerial: 0
+  readonly property bool sendPending: pendingSends.length > 0
+  readonly property int sendPendingCount: pendingSends.length
+  readonly property var latestSend: pendingSends.length > 0
+    ? pendingSends[pendingSends.length - 1] : null
   property int sendSecondsRemaining: 0
-  readonly property bool sendPending: pendingSend !== null
 
   onPendingActionChanged: {
     if (pendingAction === "" && queuedActions.length > 0)
@@ -1883,8 +1890,8 @@ Item {
   function markAllRead() {
     if (!ready || messages.length === 0) return false
     if (pendingAction !== "") {
-      note("Another action is still finishing")
-      return false
+      queueAction(wanted.slice(), action)
+      return true
     }
     // Every unread row expanded into one flat batch, which the client chunks.
     // Every counted member is sent rather than only the unread ones: the row
@@ -2185,18 +2192,18 @@ Item {
   // holding, and a return that says nothing throws it away. The mailbox can
   // stop being ready during the undo window — a reload, a sign-out — so the
   // guards are reachable and not only the transport's own error.
-  function reportSendFailure(error) {
+  function reportSendFailure(error, sendId) {
     fail(error)
     // A zero-delay send can be rejected synchronously by a provider before
     // ComposeView has returned from service.send() and parked its accepted
     // draft. Cross the event-loop boundary so every terminal signal observes
     // the same state as an ordinary network reply.
     Qt.callLater(function() {
-      if (root) root.replyFailed()
+      if (root) root.replyFailed(String(sendId || ""))
     })
   }
 
-  function reportSendSuccess(result) {
+  function reportSendSuccess(result, sendId) {
     // The sent copy is filed after the send has answered, so how the filing
     // went is a footnote on a success rather than a failure of one: the note
     // says what happened to the copy, and the reply still counts as sent.
@@ -2205,33 +2212,36 @@ Item {
     // Success has the same ordering requirement as failure: a provider may
     // finish locally, but the composer owns parking after send() returns.
     Qt.callLater(function() {
-      if (root) root.replySent()
+      if (root) root.replySent(String(sendId || ""))
     })
   }
 
   function deliver(payload) {
+    var sendId = payload ? String(payload.sendId || "") : ""
     if (!ready) {
-      reportSendFailure("The mailbox is not ready to send")
+      reportSendFailure("The mailbox is not ready to send", sendId)
       return false
     }
     if (sending) {
-      reportSendFailure("Another message is still being sent")
+      reportSendFailure("Another message is still being sent", sendId)
       return false
     }
     sending = true
     api.sendMessage(payload, function(sentPayload, error) {
       root.sending = false
-      if (error) {
-        root.reportSendFailure(error)
-        return
+      if (error) root.reportSendFailure(error, sendId)
+      else {
+        root.reportSendSuccess(sentPayload, sendId)
+        if (payload && String(payload.draftId || "") !== "") root.forgetSentDraft(String(payload.draftId))
+        // The copy is in Sent now, filed by this client or by the server; a
+        // Sent list on screen reads it in rather than waiting for the poll. A
+        // moment later rather than at once: a server that files the copy
+        // itself (Graph) can show it over IMAP a beat after the send is
+        // acknowledged.
+        sentReloadTimer.restart()
       }
-      root.reportSendSuccess(sentPayload)
-      if (payload && String(payload.draftId || "") !== "") root.forgetSentDraft(String(payload.draftId))
-      // The copy is in Sent now, filed by this client or by the server; a
-      // Sent list on screen reads it in rather than waiting for the poll. A
-      // moment later rather than at once: a server that files the copy itself
-      // (Graph) can show it over IMAP a beat after the send is acknowledged.
-      sentReloadTimer.restart()
+      // The line is free: the next parked send whose moment has come goes.
+      Qt.callLater(root.deliverDue)
     })
     return true
   }
@@ -2256,24 +2266,71 @@ Item {
     })
   }
 
-  function deliverPending() {
-    if (!sendPending) return false
-    var payload = pendingSend.payload
-    sendDelayTimer.stop()
-    sendCountdownTimer.stop()
-    pendingSend = null
-    sendSecondsRemaining = 0
-    return deliver(payload)
+  // One timer is enough for any number of parked sends: it waits for
+  // whichever is due first, and the countdown shown is the newest's, since
+  // that is the one Undo would take back.
+  function armSendTimer() {
+    if (pendingSends.length === 0) {
+      sendDelayTimer.stop()
+      sendCountdownTimer.stop()
+      sendSecondsRemaining = 0
+      return
+    }
+    var due = pendingSends[0].dueAt
+    for (var i = 1; i < pendingSends.length; i++) due = Math.min(due, pendingSends[i].dueAt)
+    sendDelayTimer.interval = Math.max(1, due - Date.now())
+    sendDelayTimer.restart()
+    if (!sendCountdownTimer.running) sendCountdownTimer.restart()
+    sendSecondsRemaining = Outbox.remainingSeconds(latestSend.dueAt, Date.now())
   }
 
+  // The parked send whose moment has come, oldest first and one at a time:
+  // a send in flight holds the rest until it answers.
+  function deliverDue() {
+    if (sending || pendingSends.length === 0) return false
+    var now = Date.now()
+    var index = -1
+    for (var i = 0; i < pendingSends.length; i++) {
+      if (pendingSends[i].dueAt <= now) {
+        index = i
+        break
+      }
+    }
+    if (index < 0) {
+      armSendTimer()
+      return false
+    }
+    var queued = pendingSends.slice()
+    var entry = queued.splice(index, 1)[0]
+    pendingSends = queued
+    armSendTimer()
+    if (deliver(entry.payload)) return true
+    // A send refused on the spot has reported itself; the next is not held
+    // back by it.
+    Qt.callLater(root.deliverDue)
+    return false
+  }
+
+  // Every parked send goes now.
+  function deliverPending() {
+    if (pendingSends.length === 0) return false
+    var queued = pendingSends.slice()
+    for (var i = 0; i < queued.length; i++) queued[i].dueAt = 0
+    pendingSends = queued
+    return deliverDue()
+  }
+
+  // Takes back the newest parked send — the one just asked for is the one a
+  // second thought is about — and says which, so the composer puts that
+  // draft, not another, back in front of the writer.
   function undoSend() {
-    if (!sendPending) return false
-    sendDelayTimer.stop()
-    sendCountdownTimer.stop()
-    pendingSend = null
-    sendSecondsRemaining = 0
+    if (pendingSends.length === 0) return ""
+    var queued = pendingSends.slice()
+    var entry = queued.pop()
+    pendingSends = queued
+    armSendTimer()
     note("Send undone")
-    return true
+    return entry.id
   }
 
   // A mailbox whose token was just refused is not ready until the next
@@ -2350,17 +2407,26 @@ Item {
     })
   }
 
-  function send(fields) {
-    if (sending || sendPending) return false
+  // Answers with the send's name, which the composer keeps beside the draft
+  // it parks, or with nothing when the message was not accepted.
+  // `order` is the service's count of sends across every account, so that
+  // "the newest" has one answer when two accounts parked a send in the same
+  // millisecond.
+  function send(fields, sendId, order) {
+    var id = String(sendId || "")
+    if (id === "") {
+      sendSerial += 1
+      id = "send-" + sendSerial
+    }
     if (!ready) {
       // Asked for its credentials first, like a save: a token refused a
       // moment ago is looked up again rather than the send refused.
       whenReady(function(ok) {
         if (!root) return
-        if (ok) root.send(fields)
-        else root.reportSendFailure("The mailbox is not ready to send")
+        if (ok) root.send(fields, id, order)
+        else root.reportSendFailure("The mailbox is not ready to send", id)
       })
-      return true
+      return id
     }
     var values = fields || ({})
     var files = Array.isArray(values.attachments) ? values.attachments : []
@@ -2413,24 +2479,29 @@ Item {
     // The draft this was opened from rides on the queued payload; the send
     // itself carries only the raw message and the thread.
     payload.draftId = String(values.draftId || "")
+    payload.sendId = id
 
-    var queued = Outbox.schedule(payload, Date.now(), undoSendSeconds)
-    if (!queued) return deliver(payload)
-
-    pendingSend = queued
-    sendSecondsRemaining = Outbox.remainingSeconds(queued.dueAt, Date.now())
-    sendDelayTimer.interval = Math.max(1, queued.dueAt - Date.now())
-    sendDelayTimer.restart()
-    sendCountdownTimer.restart()
-    note("Message queued")
-    return true
+    var now = Date.now()
+    var queued = Outbox.schedule(payload, now, undoSendSeconds)
+    // No undo window and nothing ahead of it: it goes now, as it always did.
+    // Behind another send it waits its turn like any other.
+    if (!queued && !sending) return deliver(payload) ? id : ""
+    var parked = pendingSends.slice()
+    parked.push({
+      id: id, payload: payload, dueAt: queued ? queued.dueAt : now,
+      queuedAt: now, order: Math.floor(Number(order)) || 0
+    })
+    pendingSends = parked
+    armSendTimer()
+    note(pendingSends.length === 1 ? "Message queued" : pendingSends.length + " messages queued")
+    return id
   }
 
-  signal replySent()
+  signal replySent(string sendId)
 
   // A send that did not happen. The panel answers it by putting the parked
   // draft back in front of the writer, which is the only remaining copy.
-  signal replyFailed()
+  signal replyFailed(string sendId)
 
   // ------------------------------------------------------------------ RSVP
 
@@ -3063,7 +3134,7 @@ Item {
   Timer {
     id: sendDelayTimer
     repeat: false
-    onTriggered: root.deliverPending()
+    onTriggered: root.deliverDue()
   }
 
   Timer {
@@ -3076,7 +3147,7 @@ Item {
         return
       }
       root.sendSecondsRemaining = Outbox.remainingSeconds(
-        root.pendingSend.dueAt, Date.now())
+        root.latestSend.dueAt, Date.now())
     }
   }
 
