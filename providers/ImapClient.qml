@@ -299,57 +299,54 @@ Item {
       // times, though, so an under-filled first range falls back to one snapshot
       // and one multi-command connection for everything older.
       if (typeof progress === "function" && criteria !== "") {
-        root.run(folder, [Imap.uidCeilingCommand()], function(ceilingText, ceilingError) {
+        var found = []
+        var emitted = {}
+        var nextUid = 0
+
+        function report(hasUnscanned) {
+          var partial = pageOf(found, hasUnscanned)
+          var ids = []
+          for (var i = 0; i < partial.ids.length; i++) {
+            if (emitted[partial.ids[i]]) continue
+            emitted[partial.ids[i]] = true
+            ids.push(partial.ids[i])
+          }
+          if (ids.length > 0) progress({
+            ids: ids,
+            threadIds: [],
+            nextPageToken: partial.nextPageToken,
+            estimate: partial.estimate
+          })
+          return partial
+        }
+
+        // `settled` says whether a first window has already answered: an
+        // error after one still leaves an authoritative prefix, an error
+        // before one says nothing about the cached preview.
+        function searchSnapshotRemainder(settled) {
           if (handle.aborted) return
-          if (ceilingError) {
-            finish([], ceilingError, false, false)
-            return
-          }
-          var ceiling = Imap.parseUidList(ceilingText)
-          var nextUid = ceiling.length > 0 ? ceiling[ceiling.length - 1] : 0
-          var found = []
-          var emitted = {}
-
-          function report(hasUnscanned) {
-            var partial = pageOf(found, hasUnscanned)
-            var ids = []
-            for (var i = 0; i < partial.ids.length; i++) {
-              if (emitted[partial.ids[i]]) continue
-              emitted[partial.ids[i]] = true
-              ids.push(partial.ids[i])
-            }
-            if (ids.length > 0) progress({
-              ids: ids,
-              threadIds: [],
-              nextPageToken: partial.nextPageToken,
-              estimate: partial.estimate
-            })
-            return partial
-          }
-
-          function searchSnapshotRemainder() {
+          root.run(folder, [Imap.uidListCommand()], function(snapshotText, snapshotError) {
             if (handle.aborted) return
-            root.run(folder, [Imap.uidListCommand()], function(snapshotText, snapshotError) {
+            if (snapshotError) {
+              finish(found, snapshotError, false, settled)
+              return
+            }
+            var snapshot = Imap.parseUidList(snapshotText)
+            var commands = Imap.searchCommands(criteria, snapshot, nextUid)
+            if (commands.length === 0) {
+              finish(found, "", false)
+              return
+            }
+            root.run(folder, commands, function(searchText, searchError) {
               if (handle.aborted) return
-              if (snapshotError) {
-                finish(found, snapshotError, false, true)
-                return
-              }
-              var snapshot = Imap.parseUidList(snapshotText)
-              var commands = Imap.searchCommands(criteria, snapshot, nextUid)
-              if (commands.length === 0) {
-                finish(found, "", false)
-                return
-              }
-              root.run(folder, commands, function(searchText, searchError) {
-                if (handle.aborted) return
-                if (!searchError) found = found.concat(Imap.parseSearch(searchText))
-                finish(found, searchError, false, true)
-              }, handle)
+              if (!searchError) found = found.concat(Imap.parseSearch(searchText))
+              finish(found, searchError, false, settled)
             }, handle)
-          }
+          }, handle)
+        }
 
-          var window = Imap.searchWindow(criteria, nextUid)
+        function searchBelow(ceiling) {
+          var window = Imap.searchWindow(criteria, ceiling)
           if (window.command === "") {
             finish(found, "", false)
             return
@@ -366,7 +363,45 @@ Item {
             if (partial.ids.length >= limit || nextUid === 0)
               finish(found, "", nextUid > 0)
             else
-              searchSnapshotRemainder()
+              searchSnapshotRemainder(true)
+          }, handle)
+        }
+
+        // The ceiling is the UID of the last message by sequence number,
+        // asked for in two short steps: the count from STATUS on an
+        // unselected connection, as the unread counts are, then one numeric
+        // FETCH. A FETCH that comes back empty — the last message expunged
+        // between the two — falls back to the complete snapshot rather than
+        // answering "nothing".
+        root.run("", [Imap.statusCommand(folder)], function(statusText, statusError) {
+          if (handle.aborted) return
+          if (statusError) {
+            finish([], statusError, false, false)
+            return
+          }
+          // A STATUS with no count is an odd server, not an empty mailbox:
+          // the complete snapshot answers instead of an authoritative nothing.
+          if (!/MESSAGES\s+\d+/i.test(String(statusText || ""))) {
+            searchSnapshotRemainder(false)
+            return
+          }
+          var count = Imap.parseStatus(statusText).messages
+          if (count < 1) {
+            finish([], "", false)
+            return
+          }
+          root.run(folder, [Imap.topUidCommand(count)], function(ceilingText, ceilingError) {
+            if (handle.aborted) return
+            // Some servers answer BAD to a range that starts past the end,
+            // which an expunge between STATUS and this FETCH can produce.
+            // The snapshot is the authoritative answer either way.
+            if (ceilingError) {
+              searchSnapshotRemainder(false)
+              return
+            }
+            var ceiling = Imap.parseUidList(ceilingText)
+            if (ceiling.length === 0) searchSnapshotRemainder(false)
+            else searchBelow(Math.max.apply(null, ceiling))
           }, handle)
         }, handle)
         return
