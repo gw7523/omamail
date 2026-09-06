@@ -49,6 +49,12 @@ assert.strictEqual(provider.addressQuery("imap", "from", "ada@example.com"), 'fo
 assert.strictEqual(provider.addressQuery("imap", "to", 'a"b'), 'folder:INBOX TO "a\\"b"')
 assert.strictEqual(provider.addressQuery("hey", "to", "ada@example.com"), "search:ada@example.com")
 assert.strictEqual(provider.addressQuery("imap", "from", ""), "")
+assert.strictEqual(provider.query("imap", "inbox", "from: ada@example.com", ""),
+  'folder:INBOX FROM "ada@example.com"', "a webmail from: operator, space and all, becomes the IMAP criterion")
+assert.strictEqual(provider.query("imap", "inbox", "to:*@example.com invoice", ""),
+  'folder:INBOX TO "@example.com" TEXT "invoice"', "wildcards go: IMAP criteria already match substrings")
+assert.strictEqual(provider.query("imap", "inbox", "plain words", ""),
+  'folder:INBOX TEXT "plain words"', "words without an operator stay one TEXT criterion")
 // Separate questions. `labels` is whether a message can carry several at once,
 // which is what the reader's strip draws; `move` is whether the user gets to
 // say where it goes. IMAP answers no and yes -- one folder per message is the

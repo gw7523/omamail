@@ -60,12 +60,32 @@ var MAILBOXES = [
 ]
 
 // IMAP SEARCH has no free-text operator that means what a user means by typing
-// words into a search box, so the text becomes a TEXT criterion — headers and
-// body, the closest standard equivalent. JSON.stringify is used for the quoting
-// because it escapes exactly the two characters IMAP escapes.
+// words into a search box, so plain words become a TEXT criterion — headers and
+// body, the closest standard equivalent. The three operators people bring from
+// webmail, from: to: and subject:, become the IMAP criteria of the same name;
+// a space after the colon is allowed because that is how they get typed. IMAP
+// matches a criterion as a substring, so a `*` wildcard is dropped rather than
+// searched for. JSON.stringify is used for the quoting because it escapes
+// exactly the two characters IMAP escapes.
 function searchQuery(text) {
   var value = String(text === undefined || text === null ? "" : text).trim()
-  return value === "" ? "" : "folder:INBOX TEXT " + JSON.stringify(value)
+  if (value === "") return ""
+  var tokens = value.split(/\s+/)
+  var words = []
+  var parts = []
+  for (var i = 0; i < tokens.length; i++) {
+    var match = tokens[i].match(/^(from|to|subject):(.*)$/i)
+    if (!match) {
+      words.push(tokens[i])
+      continue
+    }
+    var term = match[2]
+    if (term === "" && i + 1 < tokens.length) term = tokens[++i]
+    term = term.replace(/\*/g, "")
+    if (term !== "") parts.push(match[1].toUpperCase() + " " + JSON.stringify(term))
+  }
+  if (words.length > 0) parts.push("TEXT " + JSON.stringify(words.join(" ")))
+  return parts.length === 0 ? "" : "folder:INBOX " + parts.join(" ")
 }
 
 // Standard IMAP SEARCH has one selected folder. A typed search selects INBOX,
