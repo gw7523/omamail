@@ -2405,6 +2405,7 @@ Item {
       // The window menu is opened by the menu button beside the mark.
       AppMenu {
         id: appMenu
+        objectName: "app-menu"
         anchors.fill: parent
         textColor: root.foreground
         popupBackgroundColor: root.popupBackground

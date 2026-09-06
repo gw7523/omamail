@@ -145,7 +145,7 @@ Item {
             }
 
             HoverHandler { id: rowHover }
-            TapHandler { onTapped: root.choose(row.index) }
+            TapHandler { gesturePolicy: TapHandler.ReleaseWithinBounds; onTapped: root.choose(row.index) }
           }
         }
       }
