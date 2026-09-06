@@ -165,6 +165,7 @@ Item {
 
   property string mailboxKey: "inbox"
   property string searchQuery: ""
+  property string searchRaw: ""
   // A query picked from a list rather than typed: a Gmail label, an IMAP
   // folder. Kept apart from `searchQuery` because that one gets shaped into a
   // search — an IMAP folder wrapped in a TEXT search would go looking for the
@@ -441,6 +442,7 @@ Item {
   // are search operators, IMAP's name a folder. Opaque from here on — it is
   // handed back to the client that produced it, and used as a cache key.
   readonly property string effectiveQuery: rawQuery !== "" ? rawQuery
+    : searchRaw !== "" ? searchRaw
     : Provider.query(providerId, mailboxKey, searchQuery, defaultQuery)
   readonly property bool hasMore: nextPageToken !== ""
   // A cached search can already have rows on screen while this stays true.
@@ -511,8 +513,11 @@ Item {
   function refresh() {
     if (!ready) return
     refreshCounts()
+    labelActions.refreshMonitored()
     if (active && (windowOpen || !listLoaded)) loadMessages(false)
   }
+
+  property var monitoredIds: []
 
   function refreshCounts() {
     if (!ready || countLoading) return
@@ -2007,7 +2012,6 @@ Item {
     return true
   }
 
-  // The batch — several ticked rows at once — lives in `BatchAction.qml`.
   function actMany(ids, action) { return batchAction.run(ids, action) }
 
   BatchAction {
@@ -2680,6 +2684,12 @@ Item {
   }
 
   function notify(arrivals) { newMailNotification.notify(arrivals) }
+  readonly property alias labelActions: labelActions
+
+  LabelActions {
+    id: labelActions
+    account: root
+  }
 
   // ------------------------------------------------------------ navigation
 
@@ -2687,6 +2697,7 @@ Item {
     if (mailboxKey === key && searchQuery === "" && rawQuery === "") return
     mailboxKey = String(key || "inbox")
     searchQuery = ""
+    searchRaw = ""
     rawQuery = ""
     rawLabelId = ""
     clearSelection()
@@ -2696,10 +2707,13 @@ Item {
     loadMessages(false)
   }
 
-  function search(text) {
+  // `raw`: an app-built query in the provider's words, sent as it is.
+  function search(text, raw) {
     var query = String(text || "").trim()
-    if (query === searchQuery && rawQuery === "") return
+    var built = String(raw || "").trim()
+    if (query === searchQuery && built === searchRaw && rawQuery === "") return
     searchQuery = query
+    searchRaw = built
     // Typing in the search box leaves whatever label was selected.
     rawQuery = ""
     rawLabelId = ""
@@ -2716,6 +2730,7 @@ Item {
     var id = String(labelId || "")
     if (query === "" || (query === rawQuery && id === rawLabelId)) return
     searchQuery = ""
+    searchRaw = ""
     rawQuery = query
     rawLabelId = id
     clearSelection()
@@ -2872,9 +2887,7 @@ Item {
 
   // The client takes the manager as a required property, so it cannot be built
   // until there is one.
-  // A test's stand-in for the provider: a component the loader prefers when
-  // set, so the account can be driven against a controlled client without a
-  // server or a credential. Never set outside a test.
+  // A test's stand-in for the provider.
   property Component clientOverride: null
 
   Loader {

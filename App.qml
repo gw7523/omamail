@@ -1292,12 +1292,60 @@ Item {
     })
   }
 
+
   function confirmDelete(request) {
     if (!service) return
     if (request.kind === "event" && request.event) {
       service.calendarController.deleteEvent(request.sourceId, request.event)
       calendarView.closeDetail()
     }
+    if (request.kind === "label" && request.labelId) service.deleteLabel(request.labelId)
+  }
+
+  // ------------------------------------------------------------ labels
+
+  function labelDelimiterFor(id) {
+    var label = service ? service.labelById(id) : null
+    return Model.labelDelimiter(label)
+  }
+
+  function labelPathFor(id) {
+    var label = service ? service.labelById(id) : null
+    return label ? String(label.name || label.rawName || "") : ""
+  }
+
+  // A name asked for, then handed to the service with what it was for. The
+  // prompt is one component serving three asks, told apart by `kind`.
+  function askLabelName(kind, subject, title, initial, hint) {
+    namePrompt.openFor(kind, subject, title, initial, hint)
+  }
+
+  function labelNamed(kind, subject, text) {
+    if (!service) return
+    if (kind === "rename") service.renameLabel(subject, text)
+    else if (kind === "create") service.createLabel(subject, text)
+  }
+
+  function copyAddress(address) {
+    var text = String(address || "").trim()
+    // Straight to wl-copy as one argument: no shell, and an address that
+    // starts with a dash is not an address.
+    if (text === "" || text.charAt(0) === "-") return
+    Quickshell.execDetached(["wl-copy", text])
+    notice = "Copied " + text
+    noticeTimer.restart()
+  }
+
+  function searchAddress(field, address) {
+    if (!service) return
+    var query = Provider.addressQuery(service.providerId, field, address)
+    if (query === "") return
+    // In the provider's own words, so it must not pass through the typed
+    // search's wrapping a second time; the box shows the words for it.
+    var text = (field === "to" ? "to: " : "from: ") + String(address || "").trim()
+    service.searchAddress(query, text)
+    searchBar.setQuery(text)
+    backToList()
   }
 
   FloatingWindow {
@@ -1650,6 +1698,11 @@ Item {
             root.backToList()
           }
           onFolderToggled: function(path) { root.service.toggleFolder(path) }
+          onLabelMenuRequested: function(labelId, path, sceneX, sceneY) {
+            labelMenu.canManage = !!root.service && root.service.canManageLabels
+            labelMenu.monitored = !!root.service && root.service.monitoredLabelIds.indexOf(labelId) >= 0
+            labelMenu.openAt(labelId, path, sceneX, sceneY)
+          }
         }
 
         // Narrow windows lose the sidebar; the same mailboxes come back as a
@@ -1854,6 +1907,9 @@ Item {
           onComposeRequested: function(mode) { root.startCompose(mode) }
           onMailtoRequested: function(url) {
             root.openDraft(Mailto.parse(url))
+          }
+          onAddressMenuRequested: function(addresses, sceneX, sceneY) {
+            addressMenu.openAt(addresses, sceneX, sceneY)
           }
           onActionRequested: function(action) {
             if (!root.service || root.service.selectedId === "") return
@@ -2440,6 +2496,85 @@ Item {
         panelFontFamily: root.fontFamily
         rows: root.switcherRows
         onRowChosen: function(index) { root.goSlot(index) }
+      }
+
+      LabelMenu {
+        id: labelMenu
+        objectName: "label-menu"
+        anchors.fill: parent
+        textColor: root.foreground
+        urgentColor: root.urgent
+        dimColor: root.dim
+        popupBackgroundColor: root.popupBackground
+        popupBorderColor: root.popupBorder
+        panelFontFamily: root.fontFamily
+        onRenameRequested: function(labelId) {
+          var path = root.labelPathFor(labelId)
+          var delimiter = root.labelDelimiterFor(labelId)
+          root.askLabelName("rename", labelId, "Rename " + path,
+            Model.labelLeaf(path, delimiter), "The new name for this label. Labels beneath it move with it.")
+        }
+        onCreateRequested: function(path, beneath) {
+          var delimiter = root.service ? Model.labelDelimiter(root.service.labels.length > 0 ? root.service.labels[0] : null) : "/"
+          var parent = beneath ? path : Model.labelParent(path, delimiter)
+          root.askLabelName("create", parent,
+            parent === "" ? "New label" : "New label under " + parent, "",
+            "Its name at this level; nesting is the parent it goes under.")
+        }
+        onMoveRequested: function(labelId) {
+          var delimiter = root.labelDelimiterFor(labelId)
+          labelMovePicker.openFor(labelId,
+            Model.labelMoveTargets(root.service ? root.service.labels : [], root.labelPathFor(labelId), delimiter))
+        }
+        onMonitorToggled: function(labelId) { if (root.service) root.service.toggleMonitored(labelId) }
+        onDeleteRequested: function(labelId) {
+          var path = root.labelPathFor(labelId)
+          confirmDeleteDialog.openFor({
+            kind: "label", labelId: labelId, name: path,
+            message: "The label and every label beneath it are removed from the server. "
+              + "On Gmail the messages keep their other labels; on IMAP the folder and its mail are deleted."
+          })
+        }
+      }
+
+      NamePrompt {
+        id: namePrompt
+        objectName: "name-prompt"
+        anchors.fill: parent
+        textColor: root.foreground
+        dimColor: root.dim
+        accentColor: root.accent
+        popupBackgroundColor: root.popupBackground
+        popupBorderColor: root.popupBorder
+        panelFontFamily: root.fontFamily
+        onSubmitted: function(kind, subject, text) { root.labelNamed(kind, subject, text) }
+      }
+
+      LabelMovePicker {
+        id: labelMovePicker
+        objectName: "label-move-picker"
+        anchors.fill: parent
+        textColor: root.foreground
+        accentColor: root.accent
+        dimColor: root.dim
+        popupBackgroundColor: root.popupBackground
+        popupBorderColor: root.popupBorder
+        panelFontFamily: root.fontFamily
+        onTargetChosen: function(labelId, parentPath) { if (root.service) root.service.moveLabel(labelId, parentPath) }
+      }
+
+      AddressMenu {
+        id: addressMenu
+        objectName: "address-menu"
+        anchors.fill: parent
+        textColor: root.foreground
+        dimColor: root.dim
+        popupBackgroundColor: root.popupBackground
+        popupBorderColor: root.popupBorder
+        panelFontFamily: root.fontFamily
+        canSearch: !!root.service && Provider.addressQuery(root.service.providerId, "from", "a@b.c") !== ""
+        onCopyRequested: function(address) { root.copyAddress(address) }
+        onSearchRequested: function(field, address) { root.searchAddress(field, address) }
       }
 
       LabelPicker {

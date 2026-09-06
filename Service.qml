@@ -412,6 +412,20 @@ Item {
   // rather than on every keystroke, but it is also rebuilt by the write it
   // causes — so the value it hands back on the way out is routinely the one
   // already on disk, and a file round trip for it would be pure cost.
+  // The labels the open mailbox watches, and the switch for one of them.
+  readonly property var monitoredLabelIds: {
+    var entry = Accounts.find(accountList, activeAccountId)
+    return entry && Array.isArray(entry.monitored) ? entry.monitored : []
+  }
+
+  function toggleMonitored(labelId) {
+    var next = Accounts.toggleMonitored(accountList, activeAccountId, labelId)
+    if (Accounts.serialize(next) === Accounts.serialize(accountList)) return
+    accountList = next
+    saveAccounts()
+    if (current) current.labelActions.refreshMonitored()
+  }
+
   function setAccountLabel(id, text) {
     var next = Accounts.setLabel(accountList, id, text)
     if (Accounts.serialize(next) === Accounts.serialize(accountList)) return
@@ -911,8 +925,16 @@ Item {
   function cursorOffset(cursorId, delta) {
     return current ? current.cursorOffset(cursorId, delta) : ""
   }
+  readonly property bool canManageLabels: !!current && current.labelActions.canManageLabels
+  function labelById(id) { return current ? current.labelActions.labelById(id) : null }
+  function createLabel(parentPath, leaf) { return current ? current.labelActions.createLabel(parentPath, leaf) : false }
+  function renameLabel(id, leaf) { return current ? current.labelActions.renameLabel(id, leaf) : false }
+  function moveLabel(id, parentPath) { return current ? current.labelActions.moveLabel(id, parentPath) : false }
+  function deleteLabel(id) { return current ? current.labelActions.deleteLabel(id) : false }
+
   function selectMailbox(key) { if (current) current.selectMailbox(key) }
   function search(text) { if (current) current.search(text) }
+  function searchAddress(query, text) { if (current) current.search(text, query) }
   function selectLabel(name, labelId) {
     if (current) current.selectLabel(name, labelId)
   }
@@ -1159,6 +1181,8 @@ Item {
       mayAdoptLegacyToken: index === 0 && (!entry || entry.provider === "gmail")
       settings: root.settings
       bodyMode: root.bodyMode
+      // The labels this mailbox watches for new mail, off its own entry.
+      monitoredIds: entry ? entry.monitored : []
       // Every mailbox obeys the one answer: it is about what the reader is
       // willing to tell a sender, not about which account the mail came to.
       alwaysShowImages: root.alwaysShowImages

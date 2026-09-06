@@ -710,6 +710,28 @@ Item {
     return handle
   }
 
+  // The folder list, changed. No mailbox is selected for these — the URL is
+  // the server alone — and the cached listing is dropped so the next read
+  // sees the server's answer rather than this client's memory of it.
+  function createLabel(name, callback) {
+    return changeFolders([Imap.createCommand(name)], callback)
+  }
+
+  function renameLabel(id, name, callback) {
+    return changeFolders([Imap.renameCommand(id, name)], callback)
+  }
+
+  function deleteLabel(id, callback) {
+    return changeFolders([Imap.deleteCommand(id)], callback)
+  }
+
+  function changeFolders(commands, callback) {
+    return root.run("", commands, function(text, error) {
+      if (!error) root.foldersLoaded = false
+      if (typeof callback === "function") callback(null, error)
+    })
+  }
+
   // One id or a list of them, the way every other verb here already takes one.
   // A row that stands for a conversation is trashed as its members, and the
   // list arrives here flat — `applyPlan` groups by folder either way, so a
