@@ -387,6 +387,12 @@ Item {
             finish([], statusError, false, false)
             return
           }
+          // A STATUS with no count is an odd server, not an empty mailbox:
+          // the complete snapshot answers instead of an authoritative nothing.
+          if (!/MESSAGES\s+\d+/i.test(String(statusText || ""))) {
+            searchSnapshotRemainder(false)
+            return
+          }
           var count = Imap.parseStatus(statusText).messages
           if (count < 1) {
             finish([], "", false)
@@ -400,7 +406,7 @@ Item {
             }
             var ceiling = Imap.parseUidList(ceilingText)
             if (ceiling.length === 0) searchSnapshotRemainder(false)
-            else searchBelow(ceiling[ceiling.length - 1])
+            else searchBelow(Math.max.apply(null, ceiling))
           }, handle)
         }, handle)
         return

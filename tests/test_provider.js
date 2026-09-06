@@ -55,6 +55,12 @@ assert.strictEqual(provider.query("imap", "inbox", "to:*@example.com invoice", "
   'folder:INBOX TO "@example.com" TEXT "invoice"', "wildcards go: IMAP criteria already match substrings")
 assert.strictEqual(provider.query("imap", "inbox", "plain words", ""),
   'folder:INBOX TEXT "plain words"', "words without an operator stay one TEXT criterion")
+assert.strictEqual(provider.query("imap", "inbox", 'from:"Jane Doe" report', ""),
+  'folder:INBOX FROM "Jane Doe" TEXT "report"', "a quoted operator value keeps its spaces")
+assert.strictEqual(provider.query("imap", "inbox", "from:", ""),
+  'folder:INBOX TEXT "from:"', "an operator with no value searches for what was typed, not for everything")
+assert.strictEqual(provider.query("imap", "inbox", "from:*", ""),
+  'folder:INBOX TEXT "from:*"', "a wildcard alone is not a criterion either")
 // Separate questions. `labels` is whether a message can carry several at once,
 // which is what the reader's strip draws; `move` is whether the user gets to
 // say where it goes. IMAP answers no and yes -- one folder per message is the

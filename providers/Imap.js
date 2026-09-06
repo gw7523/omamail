@@ -63,29 +63,32 @@ var MAILBOXES = [
 // words into a search box, so plain words become a TEXT criterion — headers and
 // body, the closest standard equivalent. The three operators people bring from
 // webmail, from: to: and subject:, become the IMAP criteria of the same name;
-// a space after the colon is allowed because that is how they get typed. IMAP
-// matches a criterion as a substring, so a `*` wildcard is dropped rather than
-// searched for. JSON.stringify is used for the quoting because it escapes
-// exactly the two characters IMAP escapes.
+// a space after the colon is allowed because that is how they get typed, and a
+// quoted value keeps its spaces. IMAP matches a criterion as a substring, so a
+// `*` wildcard is dropped rather than searched for. An operator with nothing
+// after it searches for the text as typed, which matches nothing, rather than
+// for nothing, which would list the whole inbox as if it were a result.
+// JSON.stringify is used for the quoting because it escapes exactly the two
+// characters IMAP escapes.
 function searchQuery(text) {
   var value = String(text === undefined || text === null ? "" : text).trim()
   if (value === "") return ""
-  var tokens = value.split(/\s+/)
+  var pattern = /(from|to|subject):\s*(?:"([^"]*)"|(\S*))|(\S+)/gi
   var words = []
   var parts = []
-  for (var i = 0; i < tokens.length; i++) {
-    var match = tokens[i].match(/^(from|to|subject):(.*)$/i)
-    if (!match) {
-      words.push(tokens[i])
+  var match
+  while ((match = pattern.exec(value)) !== null) {
+    if (match[1] === undefined) {
+      words.push(match[4])
       continue
     }
-    var term = match[2]
-    if (term === "" && i + 1 < tokens.length) term = tokens[++i]
-    term = term.replace(/\*/g, "")
+    var term = (match[2] !== undefined ? match[2] : match[3]).replace(/\*/g, "")
     if (term !== "") parts.push(match[1].toUpperCase() + " " + JSON.stringify(term))
   }
-  if (words.length > 0) parts.push("TEXT " + JSON.stringify(words.join(" ")))
-  return parts.length === 0 ? "" : "folder:INBOX " + parts.join(" ")
+  var plain = words.join(" ").trim()
+  if (plain !== "") parts.push("TEXT " + JSON.stringify(plain))
+  if (parts.length === 0) parts.push("TEXT " + JSON.stringify(value))
+  return "folder:INBOX " + parts.join(" ")
 }
 
 // Standard IMAP SEARCH has one selected folder. A typed search selects INBOX,
