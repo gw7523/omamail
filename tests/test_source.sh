@@ -376,8 +376,8 @@ text = Path("App.qml").read_text()
 if "function switchAccount(index)" not in text:
     raise SystemExit("test_source.sh: account entry points must share view-preserving switching")
 switch = text[text.index("function switchAccount(index)"):text.index("function editAccount", text.index("function switchAccount(index)"))]
-if "calendarVisible" not in switch or "mailboxAfterAccountSwitch" not in switch:
-    raise SystemExit("test_source.sh: account switching must retain Calendar or the current mailbox tab")
+if "calendarVisible" not in switch or "mailboxAfterAccountSwitch" in switch:
+    raise SystemExit("test_source.sh: account switching must retain Calendar and otherwise land on the inbox, not carry the tab over")
 if "onAccountChosen" not in text or "root.switchAccount(index)" not in text:
     raise SystemExit("test_source.sh: the account picker must use view-preserving switching")
 service = Path("Service.qml").read_text()
