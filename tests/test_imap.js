@@ -341,7 +341,7 @@ assert.strictEqual(imap.sequenceSet(null), "")
 
 assert.strictEqual(imap.uidListCommand(), "UID FETCH 1:* (UID)",
   "a UID snapshot is one bounded FETCH response line per message")
-assert.strictEqual(imap.topUidCommand(1397), "FETCH 1397:1397 (UID)",
+assert.strictEqual(imap.topUidCommand(1397), "FETCH 1397:* (UID)",
   "an interactive search learns its ceiling from a numeric range curl passes through")
 assert.strictEqual(imap.topUidCommand(0), "", "an empty mailbox has no ceiling to fetch")
 deepEqual(imap.searchWindow("TEXT \"invoice\"", 9000), {
