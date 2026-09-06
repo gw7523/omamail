@@ -2045,6 +2045,17 @@ Item {
     payload.draftId = String(values.draftId || "")
     return api.saveDraft(payload, function(saved, error) {
       if (typeof callback === "function") callback(saved, error)
+      // The Drafts list on screen is what the server had before the save: the
+      // copy replaced is gone there and the new one is not yet listed, so
+      // a list left as it was showed both — the old row until the next poll,
+      // and a second row for every save. Read it again from the server now.
+      if (!error && root && root.mailboxKey === "drafts") {
+        root.listSerial++
+        root.nextPageToken = ""
+        root.loadMessages(false, true, "")
+      } else if (!error && root) {
+        root.refreshCounts()
+      }
     })
   }
 

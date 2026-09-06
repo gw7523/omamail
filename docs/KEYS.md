@@ -137,7 +137,7 @@ used to exist, and they had.
 The bare `?` opens the complete key sheet from mail. In a text-entry context it
 stays text, like every other bare character except `Escape`.
 
-In Drafts, `Enter`, `o`, a click and `c` all open the selected draft in the composer, with what was written in it. Leaving the composer saves the draft back over the one it came from; sending it takes that draft away. In every other mailbox, `c` starts a new message.
+In Drafts, `Enter`, `o` and `c` open the selected draft in the composer, with what was written in it; a click previews it, as in every other mailbox. Leaving the composer saves the draft back over the one it came from; sending it takes that draft away. In every other mailbox, `c` starts a new message.
 
 The delayed-send toast does not create a keyboard context. The current screen keeps its normal keys while the toast is visible. A new draft, reply, or forward can open during the delay. The send button waits for the queued message, but every draft field remains editable. The toast button restores the queued message. `Alt+Z` does the same from every context. `Ctrl+Z` remains text undo while composing or searching. If another compose is open, Omamail saves it to the provider's Drafts storage before dropping its in-memory fallback. A failed save keeps that fallback. Back and `Escape` save a non-empty composition before leaving it. The explicit Discard button remains the destructive exit.
 

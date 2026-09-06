@@ -930,8 +930,9 @@ Item {
     }
     if (id === "cursorDown") return moveCursor(1)
     if (id === "cursorUp") return moveCursor(-1)
-    // In Drafts, opening a draft is editing it: the message is what was
-    // being written, and reading it is not what anyone came for.
+    // In Drafts, opening a draft from the keyboard is editing it: the
+    // message is what was being written. A click still previews, so the
+    // list can be read through without a composer opening on every row.
     if (id === "open") return openOrEdit(cursorId)
     if (id === "backToList") return backToList()
     if (id === "archive") return actOnCursor("archive")
@@ -1765,7 +1766,7 @@ Item {
               cursorId: root.cursorId
               checkedIds: root.checkedIds
               urgentColor: root.urgent
-              onMessageActivated: function(id) { root.openOrEdit(id) }
+              onMessageActivated: function(id) { root.openMessage(id) }
               onAgentRequested: function(id, sceneX, sceneY) { root.openAgentFromRow(id, sceneX, sceneY) }
               onRowActionRequested: function(id, action) { root.actFromRow(id, action) }
               onCheckToggled: function(id) { root.toggleCheck(id) }
