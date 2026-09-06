@@ -1359,6 +1359,9 @@ Item {
       root.cursorId = ""
       root.closeLabelPopups()
       agentPrompt.close()
+      // The account lands on its inbox (Service sees to that), so a search
+      // left in the box would describe a list that is no longer on screen.
+      if (searchBar.queryText !== "") searchBar.setQuery("")
     }
     function onSidebarWidthChanged() { root.sidebarWidth = root.service.sidebarWidth }
     function onListWidthChanged() { root.listWidth = root.service.listWidth }
