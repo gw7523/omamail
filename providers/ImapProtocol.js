@@ -151,6 +151,52 @@ function trimmed(value) {
   return String(value === undefined || value === null ? "" : value).trim()
 }
 
+// IMAP password vs Microsoft 365 XOAUTH2. Empty/missing is password: that is
+// what every mailbox already on disk is. `tokenAccount` is the ortie account
+// name (`ortie token show -a <name>`), not a secret.
+function usesXoauth2(raw) {
+  return trimmed((raw || {}).auth).toLowerCase() === "xoauth2"
+}
+
+function tokenAccountOf(raw) {
+  return trimmed((raw || {}).tokenAccount)
+}
+
+function normalizeAuth(value) {
+  return trimmed(value).toLowerCase() === "xoauth2" ? "xoauth2" : ""
+}
+
+// How a message leaves: SMTP, or Microsoft Graph's sendMail for a Microsoft
+// 365 tenant that has switched authenticated SMTP off. Graph takes the same
+// MIME the SMTP path builds and files the sent copy itself; it needs a token
+// of its own audience, which is a second token account.
+var GRAPH_SEND_URL = "https://graph.microsoft.com/v1.0/me/sendMail"
+
+function sendsViaGraph(raw) {
+  return trimmed((raw || {}).send).toLowerCase() === "graph"
+}
+
+function normalizeSend(value) {
+  return trimmed(value).toLowerCase() === "graph" ? "graph" : ""
+}
+
+function graphTokenAccountOf(raw) {
+  return trimmed((raw || {}).graphTokenAccount)
+}
+
+// The string `mail-transport.sh` decodes as curl credentials. Password IMAP is
+// `user:password`; XOAUTH2 is `oauth2-bearer:<user>:<token>` so the transport
+// can emit curl's `user` + `oauth2-bearer` options. A tab is a control
+// character and is refused before curl starts, so the separator is a colon
+// (the token may contain further colons; only the first two fields are split).
+function imapCredentials(raw, secret) {
+  var settings = normalizeSettings(raw)
+  var value = String(secret === undefined || secret === null ? "" : secret)
+  if (usesXoauth2(settings))
+    return "oauth2-bearer:" + settings.username + ":" + value
+  return settings.username + ":" + value
+}
+
 function domainOf(address) {
   var at = trimmed(address).lastIndexOf("@")
   return at < 0 ? "" : trimmed(address).substring(at + 1).toLowerCase()
@@ -241,7 +287,11 @@ function normalizeSettings(raw) {
     // Loopback only. A plaintext session to anywhere else is a password on the
     // wire, and the one legitimate case — a local bridge — never leaves the
     // machine.
-    insecure: values.insecure === true && isLoopback(values.imapHost)
+    insecure: values.insecure === true && isLoopback(values.imapHost),
+    auth: normalizeAuth(values.auth),
+    tokenAccount: tokenAccountOf(values),
+    send: normalizeSend(values.send),
+    graphTokenAccount: graphTokenAccountOf(values)
   }
 }
 
@@ -276,6 +326,10 @@ function validateSettings(raw) {
   if (!isValidHost(settings.imapHost)) return { ok: false, error: "That is not a valid IMAP server address" }
   if (settings.smtpHost !== "" && !isValidHost(settings.smtpHost))
     return { ok: false, error: "That is not a valid SMTP server address" }
+  if (usesXoauth2(settings) && settings.tokenAccount === "")
+    return { ok: false, error: "XOAUTH2 mailboxes need a token helper account name" }
+  if (sendsViaGraph(settings) && settings.graphTokenAccount === "")
+    return { ok: false, error: "Name the token account for Microsoft Graph" }
   return { ok: true, error: "", settings: settings }
 }
 

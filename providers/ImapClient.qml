@@ -957,6 +957,10 @@ Item {
 
     var message = Mail.decodeBase64Url(raw)
     var settings = auth ? auth.settings : null
+    // A tenant with authenticated SMTP switched off sends through Graph
+    // instead: the same message, a token of Graph's own audience, and the
+    // sent copy filed by Graph itself.
+    if (Imap.sendsViaGraph(settings)) return sendViaGraph(raw, callback, handle)
     var smtp = Imap.smtpUrl(settings)
     if (smtp === "") {
       if (typeof callback === "function")
@@ -1026,6 +1030,54 @@ Item {
         // becomes of the copy, a sent message is what comes back from here —
         // the filing is a footnote on the success, never a failure of it.
         fileSentCopy(message, callback, handle)
+      })
+      process.running = true
+    })
+    return handle
+  }
+
+  function sendViaGraph(raw, callback, handle) {
+    if (!auth || typeof auth.withGraphToken !== "function") {
+      if (typeof callback === "function") callback(null, "This mailbox cannot send through Microsoft Graph")
+      return handle
+    }
+    root.inFlight++
+    auth.withGraphToken(function(token, tokenError) {
+      if (!root) return
+      if (handle.aborted) {
+        root.inFlight = Math.max(0, root.inFlight - 1)
+        return
+      }
+      if (!token) {
+        root.inFlight = Math.max(0, root.inFlight - 1)
+        if (typeof callback === "function") callback(null, tokenError || "Not signed in to Microsoft Graph")
+        return
+      }
+      var message = Mail.decodeBase64Url(raw)
+      var fields = [Mail.encodeBase64(Imap.GRAPH_SEND_URL), Mail.encodeBase64(token), Mail.encodeBase64(message)]
+      var process = transportComponent.createObject(root, {
+        command: [root.transport],
+        requestLine: "graph-send " + fields.join(" ")
+      })
+      if (!process) {
+        root.inFlight = Math.max(0, root.inFlight - 1)
+        if (typeof callback === "function") callback(null, "Could not start the mail transport")
+        return
+      }
+      handle.process = process
+      process.finished.connect(function(status, out, err) {
+        if (!root) return
+        handle.process = null
+        process.destroy()
+        root.inFlight = Math.max(0, root.inFlight - 1)
+        if (typeof callback !== "function") return
+        if (status !== 0) {
+          var detail = Imap.decodeResponse(err, Mail.base64ToBytes, Mail.bytesToLatin1)
+          callback(null, Imap.responseError(status, detail, "The message could not be sent through Microsoft Graph"))
+          return
+        }
+        // Graph files the copy in Sent Items itself; nothing to append.
+        callback(Imap.sentCopyResult("Sent Items", true), "")
       })
       process.running = true
     })
