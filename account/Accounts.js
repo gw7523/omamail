@@ -116,7 +116,11 @@ function makeImapSettings(raw) {
     aliases: Aliases.parse(values.aliases),
     insecure: values.insecure === true,
     auth: auth === "xoauth2" ? "xoauth2" : "",
-    tokenAccount: trimmed(values.tokenAccount)
+    tokenAccount: trimmed(values.tokenAccount),
+    // Sending through Microsoft Graph, with the token account of Graph's own
+    // audience, for a tenant that has authenticated SMTP switched off.
+    send: trimmed(values.send).toLowerCase() === "graph" ? "graph" : "",
+    graphTokenAccount: trimmed(values.graphTokenAccount)
   }
 }
 
