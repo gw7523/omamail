@@ -259,6 +259,29 @@ if printf '%s\n' "graph-send $(b64 'https://evil.example.net/sendMail') $(b64 't
   exit 1
 fi
 
+# Graph answers with an HTTP status rather than a curl error. Only an explicit
+# 2xx is a sent message; a missing status line is a failure, not a pass.
+graph_reply() {
+  printf '%s\n' "$graph" | CURL_STUB_HEADER="$1" PATH="$work/bin:$PATH" sh "$script"
+}
+graph_case() {
+  reply=$(graph_reply "$2")
+  st=$(printf '%s\n' "$reply" | sed -n '1p')
+  err=$(printf '%s\n' "$reply" | sed -n '3p' | base64 -d 2>/dev/null)
+  if [ "$st" = "$3" ] && { [ -z "$4" ] || printf '%s' "$err" | grep -q "$4"; }; then
+    printf '  ok   %s\n' "$1"
+  else
+    printf '  FAIL %s (status %s: %s)\n' "$1" "$st" "$err"
+    failures=$(( failures + 1 ))
+  fi
+}
+graph_case "Graph 202 is a sent message" 'HTTP/1.1 202 Accepted' 0 ''
+graph_case "Graph status is read after a 100 Continue" 'HTTP/1.1 100 Continue
+
+HTTP/1.1 202 Accepted' 0 ''
+graph_case "Graph 401 is a failure carrying the status" 'HTTP/1.1 401 Unauthorized' 22 'Graph answered 401'
+graph_case "Graph with no status line is a failure" '' 22 'no HTTP status'
+
 # --------------------------------------------------------- IMAP draft upload
 
 append="imap-append $(b64 'imaps://imap.example.org:993/Drafts') $(b64 'jane:pw') $(b64 'Subject: saved draft

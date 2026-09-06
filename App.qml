@@ -1370,8 +1370,12 @@ Item {
     function onActiveAccountIdChanged() {
       root.clearChecksIfForeign()
       root.cursorId = ""
-      // The account lands on its inbox (Service sees to that), so a search
-      // left in the box would describe a list that is no longer on screen.
+    }
+    // The account lands on its inbox (Service sees to that), so a search left
+    // in the box would describe a list that is no longer on screen. Keyed on
+    // the account object rather than its id: cancelling Add account changes
+    // the one without the other.
+    function onCurrentChanged() {
       if (searchBar.queryText !== "") searchBar.setQuery("")
     }
     function onSidebarWidthChanged() { root.sidebarWidth = root.service.sidebarWidth }
@@ -1507,7 +1511,6 @@ Item {
   function switchAccount(index) {
     if (!service) return false
     var keepCalendar = calendarVisible
-    var mailbox = service.mailboxKey
     // Choosing one mailbox is choosing to be in it, so the combined view goes
     // off. Leaving it on would have named an account in the bar and gone on
     // showing every one of them.
@@ -1517,8 +1520,8 @@ Item {
       showCalendar()
       return true
     }
-    var target = Model.mailboxAfterAccountSwitch(mailbox, service.mailboxes)
-    if (target !== "") service.selectMailbox(target)
+    // The account arrives on its inbox — Service sees to that on any switch,
+    // not only this one — so nothing is carried over from the last account.
     backToList()
     return true
   }

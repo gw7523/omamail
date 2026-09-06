@@ -369,8 +369,8 @@ done
 
 # Graph answers with a status, not with a curl error: 202 is sent, anything
 # else is the body's own explanation.
-if [ "$mode" = "graph-send" ] && [ "$status" -eq 0 ] && [ -s "$work/headers" ]; then
-  http=$(sed -n 's/^HTTP\/[0-9.]* \([0-9]*\).*/\1/p' "$work/headers" | tail -1)
+if [ "$mode" = "graph-send" ] && [ "$status" -eq 0 ]; then
+  http=$(sed -n 's/^HTTP\/[0-9.]* \([0-9]*\).*/\1/p' "$work/headers" 2>/dev/null | tail -1)
   case "$http" in
     2[0-9][0-9]) ;;
     "") status=22; printf 'Graph gave no HTTP status' > "$work/err" ;;

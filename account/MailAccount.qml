@@ -2593,6 +2593,12 @@ Item {
     messages = []
     previewMessages = []
     listLoaded = false
+    // A signed-out account cannot load, but it can still show what it last
+    // saw of this mailbox rather than an empty list.
+    if (!ready) {
+      paintFromCache()
+      return
+    }
     loadMessages(false)
   }
 
