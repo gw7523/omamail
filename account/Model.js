@@ -1411,3 +1411,22 @@ function batchFailureNote(asked, failed, actionLabel, error) {
   var reason = String(error || "").trim()
   return failed + " of " + asked + " could not be " + verb + (reason === "" ? "" : ": " + reason)
 }
+
+// The status line's account of what is still owed: sends going or parked,
+// actions running or waiting their turn. One phrase per kind and nothing at
+// all when nothing is, since the strip is read for what is outstanding and a
+// zero would be a reassurance nobody asked for.
+function activityStatus(counts) {
+  var c = counts || {}
+  function count(value) { return Math.max(0, Math.floor(Number(value)) || 0) }
+  var sending = count(c.sending)
+  var queuedSends = count(c.queuedSends)
+  var running = count(c.running)
+  var waiting = count(c.waiting)
+  var parts = []
+  if (sending > 0) parts.push(sending === 1 ? "Sending" : "Sending " + sending)
+  if (queuedSends > 0) parts.push(queuedSends + " queued to send")
+  if (running > 0) parts.push(running === 1 ? "1 action running" : running + " actions running")
+  if (waiting > 0) parts.push(waiting + " waiting")
+  return parts.join(" \u00b7 ")
+}
