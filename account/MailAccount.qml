@@ -343,8 +343,11 @@ Item {
 
   onPendingActionChanged: {
     if (pendingAction !== "") return
+    // The quiet line first: one small mark-read per opened message, which a
+    // run of keystrokes must not keep waiting. Each runner steps aside if
+    // the other has taken the turn.
+    if (queuedQuietActions.length > 0) Qt.callLater(root.runQueuedQuietAction)
     if (queuedActions.length > 0) Qt.callLater(root.runQueuedAction)
-    else if (queuedQuietActions.length > 0) Qt.callLater(root.runQueuedQuietAction)
   }
 
   // Notifications only start once the first successful load has established
@@ -1324,8 +1327,20 @@ Item {
 
   function queueAction(ids, action) {
     var queued = queuedActions.slice()
-    queued.push({ ids: ids, action: String(action || "") })
+    queued.push({ ids: ids, action: String(action || ""), cacheKey: cacheKey })
     queuedActions = queued
+  }
+
+  // Everything parked or waiting is let go — the account is leaving — and
+  // the names of its sends are handed back so the composer can put their
+  // drafts in front of the writer.
+  function abandonPending() {
+    var ids = []
+    for (var i = 0; i < pendingSends.length; i++) ids.push(pendingSends[i].id)
+    pendingSends = []
+    queuedActions = []
+    armSendTimer()
+    return ids
   }
 
   // One at a time, in order: the optimistic edit and its restore reason
@@ -1336,8 +1351,25 @@ Item {
     var queued = queuedActions.slice()
     var request = queued.shift()
     queuedActions = queued
-    if (request.ids.length === 1) act(request.ids[0], request.action, false)
-    else actMany(request.ids, request.action)
+    // The action was asked of a list; if that list has gone from the screen,
+    // or the earlier action took its rows away, it is not done to whatever
+    // stands there now. Said, rather than silently dropped.
+    var ids = []
+    if (request.cacheKey === cacheKey) {
+      for (var i = 0; i < request.ids.length; i++) {
+        if (Model.indexById(messages, request.ids[i]) >= 0
+            || Model.indexById(previewMessages, request.ids[i]) >= 0) ids.push(request.ids[i])
+      }
+    }
+    if (ids.length === 0) {
+      note(request.cacheKey === cacheKey
+        ? "A queued action was skipped: its messages are gone"
+        : "A queued action was skipped: the list changed")
+    } else if (ids.length === 1) {
+      act(ids[0], request.action, false)
+    } else {
+      actMany(ids, request.action)
+    }
     // An action with nothing to do returns without ever setting
     // pendingAction, so the next in line is asked for here rather than by a
     // change that never came.
@@ -2264,7 +2296,7 @@ Item {
     var queued = Outbox.schedule(payload, now, undoSendSeconds)
     // No undo window and nothing ahead of it: it goes now, as it always did.
     // Behind another send it waits its turn like any other.
-    if (!queued && !sending) return deliver(payload) ? id : ""
+    if (!queued && !sending && pendingSends.length === 0) return deliver(payload) ? id : ""
     var parked = pendingSends.slice()
     parked.push({
       id: id, payload: payload, dueAt: queued ? queued.dueAt : now,

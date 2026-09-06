@@ -703,8 +703,12 @@ DropArea {
           break
         }
       }
+      // A send with a name that is not here belongs to no parked draft:
+      // answering with another's would restore or forget the wrong words.
+      if (index < 0) return null
+    } else {
+      index = oldest ? 0 : parked.length - 1
     }
-    if (index < 0) index = oldest ? 0 : parked.length - 1
     var entry = parked.splice(index, 1)[0]
     parkedDrafts = parked
     return entry.draft
