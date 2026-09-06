@@ -84,12 +84,14 @@ var BINDINGS = [
   { id: "markUnread", keys: ["Shift+U"], contexts: MAIL,
     group: "Acting", label: "Mark unread" },
   // Gmail's `x`: tick the row under the cursor, and the acting keys above
-  // then mean every ticked row rather than the one the cursor is on. List
-  // only — in the reader there is one message and it is the one open.
-  { id: "toggleCheck", keys: ["x"], contexts: ["list"],
+  // then mean every ticked row rather than the one the cursor is on. Bound
+  // in the reader as well as the list, because in a wide window the list
+  // stays on screen beside an open message and the cursor still walks it;
+  // `App.qml` refuses the key where the list is not on screen.
+  { id: "toggleCheck", keys: ["x"], contexts: MAIL,
     group: "Acting", label: "Select or deselect the message",
-    hint: { list: "select" } },
-  { id: "checkAll", keys: ["Ctrl+A"], contexts: ["list"],
+    hint: { list: "select", reader: "select" } },
+  { id: "checkAll", keys: ["Ctrl+A"], contexts: MAIL,
     group: "Acting", label: "Select every message loaded, or none" },
 
   // Answering works from the list too, the way the row's own menu does: the
