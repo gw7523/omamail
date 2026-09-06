@@ -1984,6 +1984,9 @@ Item {
       }
       root.reportSendSuccess(sentPayload)
       if (payload && String(payload.draftId || "") !== "") root.forgetSentDraft(String(payload.draftId))
+      // The copy is in Sent now, filed by this client or by the server; a
+      // Sent list on screen reads it in rather than waiting for the poll.
+      if (root.mailboxKey === "sent" && root.active) root.loadMessages(false, true, "")
     })
     return true
   }
