@@ -2612,6 +2612,22 @@ Item {
     loadMessages(false)
   }
 
+  // A search built by the app rather than typed: `query` is already in the
+  // provider's own words and `text` is what the search box shows for it.
+  function searchAddress(query, text) {
+    var raw = String(query || "").trim()
+    if (raw === "") return
+    if (raw === searchRaw && rawQuery === "") return
+    searchQuery = String(text || raw).trim()
+    searchRaw = raw
+    rawQuery = ""
+    rawLabelId = ""
+    clearSelection()
+    messages = []
+    listLoaded = false
+    loadMessages(false)
+  }
+
   // A label on Gmail, a folder on IMAP. One entry point either way, because the
   // sidebar draws one kind of row.
   function selectLabel(name, labelId) {
