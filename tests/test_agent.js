@@ -10,8 +10,9 @@ assert.strictEqual(agent.hasAgent("claude -p"), true)
 // is dropped rather than drawn on nothing.
 deepEqual(agent.parseJobs("not json"), [])
 deepEqual(agent.parseJobs('{"id":"x"}'), [])
-deepEqual(agent.parseJobs('[{"id":"a","messageId":"1"},{"id":"b"},null,{"messageId":"2"}]'),
-  [{ id: "a", messageId: "1" }])
+deepEqual(agent.parseJobs('[{"id":"a","messageId":"1"},{"id":"b","scope":"all"},null,{"messageId":"2"}]'),
+  [{ id: "a", messageId: "1" }, { id: "b", scope: "all" }],
+  "a scope, selection or draft job has no message and is still a job")
 
 const running = { id: "r", messageId: "m1", state: "running", created: 5, subject: "Invoice" }
 const older = { id: "o", messageId: "m1", state: "done", created: 1, summary: "Filed it" }
@@ -82,16 +83,15 @@ assert.strictEqual(parsed.folder, "INBOX")
 assert.strictEqual(parsed.command, "claude -p")
 assert.ok(parsed.message.indexOf("with lines") > 0)
 
-assert.strictEqual(agent.folderOf("41:INBOX", "inbox"), "INBOX")
-assert.strictEqual(agent.folderOf("41:Archive/2026", "inbox"), "Archive/2026")
-assert.strictEqual(agent.folderOf("18c2f0a9", "sent"), "sent", "a Gmail id has no folder")
-assert.strictEqual(agent.folderOf("12:34", "inbox"), "inbox", "a HEY id is posting:topic, not a folder")
+assert.strictEqual(agent.folderOf("41:INBOX", "inbox", "imap"), "INBOX")
+assert.strictEqual(agent.folderOf("41:2026", "inbox", "imap"), "2026", "an IMAP folder can be a number")
+assert.strictEqual(agent.folderOf("18c2f0a9", "sent", "gmail"), "sent", "a Gmail id has no folder")
+assert.strictEqual(agent.folderOf("12:34", "inbox", "hey"), "inbox", "a HEY id is posting:topic, not a folder")
 
 // The pane's jobs are the ones about a scope rather than a message.
 const paneJob = { id: "p", scope: "all", messageId: "", state: "running", created: 7 }
 assert.strictEqual(agent.isScopeJob(paneJob), true)
 assert.strictEqual(agent.isScopeJob(running), false)
-deepEqual(agent.scopeJobs([running, paneJob, asked]).map(function (j) { return j.id }), ["p"])
 assert.strictEqual(agent.scopeOf(true, "a@x"), "all")
 assert.strictEqual(agent.scopeOf(false, "a@x"), "account:a@x")
 assert.strictEqual(agent.scopeLabel("all"), "Every mailbox")
@@ -143,7 +143,6 @@ assert.strictEqual(agent.jobAboutLabel({ scope: "all" }), "Every mailbox")
   assert.strictEqual(map.m1.id, "s", "the live selection job wins on a message it names")
   assert.strictEqual(map.m2.id, "s")
   assert.strictEqual(agent.jobFor([older, many], "m2").id, "s")
-  deepEqual(agent.jobsForMessage([older, many, asked], "m1").map(function (j) { return j.id }), ["s", "o"])
   assert.strictEqual(agent.jobAboutLabel(many), "2 messages")
   assert.strictEqual(agent.jobAboutLabel({ messageIds: ["m1"], subject: "One" }), "\u201COne\u201D")
 

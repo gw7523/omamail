@@ -144,8 +144,13 @@ Item {
         handleSecretLookup("")
         return
       }
-      var bin = home !== "" ? (home + "/.local/bin/ortie") : "ortie"
-      secretLookup.command = [bin, "token", "show", "-a", tokenAccount]
+      // ortie wherever it is installed — on PATH, or under ~/.local/bin,
+      // which the shell's PATH may not carry — and asked to refresh a token
+      // that has expired, so an hour-old sign-in recovers on its own. The
+      // account name is $0, never interpolated into the line.
+      secretLookup.command = ["/bin/sh", "-c",
+        'exec "$(command -v ortie || printf %s "$HOME/.local/bin/ortie")" token show -r -a "$0"',
+        tokenAccount]
       secretLookup.running = true
       return
     }

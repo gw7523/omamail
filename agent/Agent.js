@@ -21,7 +21,7 @@ function parseJobs(text) {
   for (var i = 0; i < parsed.length; i++) {
     var job = parsed[i]
     if (!job || typeof job !== "object") continue
-    if (String(job.id || "") === "" || String(job.messageId || "") === "") continue
+    if (String(job.id || "") === "") continue
     out.push(job)
   }
   return out
@@ -81,16 +81,6 @@ function jobsByMessage(jobs) {
   return out
 }
 
-// Every job about a message, newest first — what the pane shows when it is
-// opened from a row.
-function jobsForMessage(jobs, messageId) {
-  var list = Array.isArray(jobs) ? jobs : []
-  var id = String(messageId || "")
-  var out = []
-  for (var i = 0; i < list.length; i++) if (messageIdsOf(list[i]).indexOf(id) >= 0) out.push(list[i])
-  out.sort(function(a, b) { return Number(b.created || 0) - Number(a.created || 0) })
-  return out
-}
 
 // What the row's glyph means, or "" for a message with nothing to show.
 function glyphState(job) {
@@ -216,14 +206,14 @@ function payload(summary, bodyText, account, folder, command, prompt) {
   })
 }
 
-// Where an IMAP id says its message lives, for the prompt: `<uid>:<folder>`.
-// A Gmail id carries no folder and a HEY id is `<posting>:<topic>`, two
-// numbers; for both the mailbox key is the nearest honest answer.
-function folderOf(messageId, mailboxKey) {
+// Where a message lives, for the prompt. An IMAP id is `<uid>:<folder>` and
+// says so itself; a Gmail id carries no folder and a HEY id is two numbers,
+// so for those the mailbox key is the nearest honest answer. The provider
+// decides, not the shape of the id: an IMAP folder can be named "2026".
+function folderOf(messageId, mailboxKey, providerId) {
   var id = String(messageId || "")
   var at = id.indexOf(":")
-  if (at > 0 && at < id.length - 1 && /^\d+$/.test(id.slice(0, at))
-      && !/^\d+$/.test(id.slice(at + 1))) return id.slice(at + 1)
+  if (String(providerId || "") === "imap" && at > 0 && at < id.length - 1) return id.slice(at + 1)
   return String(mailboxKey || "")
 }
 
@@ -236,12 +226,6 @@ function isScopeJob(job) {
   return !!job && String(job.messageId || "") === "" && String(job.scope || "") !== ""
 }
 
-function scopeJobs(jobs) {
-  var list = Array.isArray(jobs) ? jobs : []
-  var out = []
-  for (var i = 0; i < list.length; i++) if (isScopeJob(list[i])) out.push(list[i])
-  return out
-}
 
 function scopeOf(all, email) {
   return all ? "all" : "account:" + String(email || "")

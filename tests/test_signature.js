@@ -25,6 +25,7 @@ assert.strictEqual(signature.rasterKind(""), "")
 {
   const hostile = '<html><head><style>p{display:none}</style><script>alert(1)</script></head>'
     + '<body><p onmouseover="steal()" style="color:red" class="x">Ada <b>Lovelace</b></p>'
+    + '<p style="background:url(https://evil.example.net/bg.png);color:blue">styled</p>'
     + '<a href="javascript:alert(1)">click</a> <a href="https://example.com/x?y=1">site</a> '
     + '<a href="http://127.0.0.1/admin">local</a> <a href="mailto:ada@example.com">mail</a>'
     + '<img src="https://tracker.example.net/p.gif"><img src="data:image/png;base64,' + PNG + '" width="16" height="16" alt="logo">'
@@ -36,11 +37,13 @@ assert.strictEqual(signature.rasterKind(""), "")
   assert.strictEqual(result.problem, "")
   const html = result.html
   const forbidden = ["<script", "<style", "onmouseover", "javascript:", "tracker.example.net", "127.0.0.1",
-    "svg", "<iframe", "<object", "<form", "<input", "background=", "bgcolor", "style=", "class=", "evil.example.net"]
+    "svg", "<iframe", "<object", "<form", "<input", "background=", "url(", "evil.example.net", "font-size:0"]
   forbidden.forEach(function (needle) {
     assert.strictEqual(html.toLowerCase().indexOf(needle.toLowerCase()), -1, "must not survive: " + needle)
   })
   assert.ok(html.indexOf("Ada") >= 0 && html.indexOf("Lovelace") >= 0, "the words stay")
+  assert.ok(html.indexOf('style="color:red"') > 0, "the formatting stays: an inline colour")
+  assert.ok(html.indexOf("<b>Lovelace</b>") > 0)
   assert.ok(html.indexOf('href="https://example.com/x?y=1"') > 0, "a public link stays")
   assert.ok(html.indexOf('href="mailto:ada@example.com"') > 0, "a mailto stays")
   assert.strictEqual((html.match(/<img /g) || []).length, 1, "only the real raster survives")
@@ -50,6 +53,16 @@ assert.strictEqual(signature.rasterKind(""), "")
   assert.ok(result.plain.indexOf("Ada Lovelace") >= 0, "a text-only client gets the words")
   assert.strictEqual(result.plain.indexOf("alert"), -1)
   assert.strictEqual(html.indexOf("<"), 0, "what is stored is markup rebuilt from the tree")
+}
+
+// Formatting is what the file was imported for: colours, a face, a table.
+{
+  const styled = signature.importHtml('<table style="border:1px solid #ccc"><tr><td align="left"><font color="#333" face="Arial" size="2">Ada</font><br><span style="color:#888">Analyst</span></td></tr></table>')
+  assert.strictEqual(styled.problem, "")
+  assert.ok(styled.html.indexOf('color="#333"') > 0 && styled.html.indexOf('face="Arial"') > 0, "a font's colour and face stay")
+  assert.ok(styled.html.indexOf("color:#888") > 0, "an inline colour stays")
+  assert.ok(styled.html.indexOf("border:1px solid #ccc") > 0, "a border stays")
+  assert.strictEqual(styled.dropped, 0, "nothing needed removing")
 }
 
 // Nothing usable, and too big, are refused rather than stored empty.

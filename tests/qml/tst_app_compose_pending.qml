@@ -346,6 +346,19 @@ Item {
         "once the newer draft is durable, recovery follows the older failed draft")
     }
 
+    // A click on a draft previews it, as a click does in every mailbox; the
+    // keys are what edit it.
+    function test_a_click_previews_a_draft() {
+      mailService.mailboxKey = "drafts"
+      app.openMessage("draft-7")
+      wait(30)
+      compare(mailService.selectedId, "draft-7")
+      compare(app.currentView, "reader")
+      compare(app.composing, false)
+      app.back()
+      mailService.mailboxKey = "inbox"
+    }
+
     // In Drafts, opening a draft is editing it: `o` selects the draft and,
     // once its body has loaded, the composer opens on it with what was
     // written — no second key. `c` still does the same.

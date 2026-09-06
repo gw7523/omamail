@@ -2474,13 +2474,22 @@ Item {
     return index >= 0 ? labels[index] : null
   }
 
+  // The path as a person reads it: the decoded name, which on IMAP is what
+  // LIST's modified-UTF-7 spelled and on Gmail is the name itself. The wire
+  // name — the id — is what goes back to the server for a folder it has.
   function labelPathOf(label) {
-    return label ? String(label.rawName || label.name || "") : ""
+    return label ? String(label.name || label.rawName || "") : ""
+  }
+
+  function labelByPath(path) {
+    for (var i = 0; i < labels.length; i++) if (labelPathOf(labels[i]) === String(path || "")) return labels[i]
+    return null
   }
 
   function createLabel(parentPath, leaf) {
     if (!ready || !canManageLabels) return false
-    var delimiter = Model.labelDelimiter(labels.length > 0 ? labels[0] : null)
+    var parent = labelByPath(parentPath)
+    var delimiter = Model.labelDelimiter(parent || (labels.length > 0 ? labels[0] : null))
     var problem = Model.labelNameProblem(leaf, delimiter)
     if (problem !== "") { fail(problem); return false }
     var name = Model.labelPathJoin(parentPath, leaf, delimiter)
@@ -2506,7 +2515,7 @@ Item {
       if (!root) return
       if (error) { root.fail("Could not rename " + path + ": " + String(error)); return }
       root.note("Renamed to " + name)
-      root.afterLabelMoved(path, name)
+      root.afterLabelMoved(label, name)
     })
     return true
   }
@@ -2522,7 +2531,7 @@ Item {
       if (!root) return
       if (error) { root.fail("Could not move " + path + ": " + String(error)); return }
       root.note("Moved to " + name)
-      root.afterLabelMoved(path, name)
+      root.afterLabelMoved(label, name)
     })
     return true
   }
@@ -2543,14 +2552,15 @@ Item {
     return true
   }
 
-  // The label on screen follows its own rename, so a rename does not leave
-  // the window on a query for a name the server no longer has.
-  function afterLabelMoved(oldPath, newPath) {
-    if (rawQuery !== "" && rawQuery === Provider.labelQuery(providerId, oldPath)) {
-      rawQuery = Provider.labelQuery(providerId, newPath)
-      rawLabelId = providerId === "imap" ? newPath : rawLabelId
-      loadMessages(false)
-    }
+  // The label on screen follows its own rename. Its new wire name is the
+  // server's to spell, so the list is read again first and the label is
+  // found by the name it now has; a rename of a label not on screen only
+  // reloads.
+  property string followLabelPath: ""
+
+  function afterLabelMoved(label, newPath) {
+    var wasOpen = rawQuery !== "" && rawQuery === Provider.labelQuery(providerId, String(label.rawName || label.name || ""))
+    followLabelPath = wasOpen ? String(newPath || "") : ""
     reloadLabels()
   }
 
@@ -2560,6 +2570,12 @@ Item {
       if (!root || error) return
       root.labels = result
       root.cacheStore.putLabels(result)
+      if (root.followLabelPath !== "") {
+        var moved = root.labelByPath(root.followLabelPath)
+        root.followLabelPath = ""
+        if (moved) root.selectLabel(String(moved.rawName || moved.name || ""), String(moved.id || ""))
+        else root.selectMailbox("inbox")
+      }
     })
   }
 

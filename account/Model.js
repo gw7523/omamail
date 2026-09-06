@@ -1229,7 +1229,9 @@ function selectionStatus(count) {
 function labelTree(labels, collapsedPaths) {
   var all = Array.isArray(labels) ? labels : []
   var folded = Array.isArray(collapsedPaths) ? collapsedPaths : []
-  var root = { children: {}, order: [] }
+  // Children keyed on a prototype-less object: a label named "constructor"
+  // or "__proto__" is a label, not a property of Object.
+  var root = { children: Object.create(null), order: [] }
   for (var i = 0; i < all.length; i++) {
     var label = all[i]
     if (!label || label.system) continue
@@ -1245,7 +1247,7 @@ function labelTree(labels, collapsedPaths) {
       path = path === "" ? part : path + delimiter + part
       if (!node.children[part]) {
         node.children[part] = { name: part, path: path, label: null,
-          unread: 0, children: {}, order: [] }
+          unread: 0, children: Object.create(null), order: [] }
         node.order.push(part)
       }
       node = node.children[part]
@@ -1355,7 +1357,7 @@ function labelMoveTargets(labels, movingPath, delimiter) {
   for (var i = 0; i < all.length; i++) {
     var label = all[i]
     if (!label || label.system) continue
-    var path = String(label.rawName || label.name || "")
+    var path = String(label.name || label.rawName || "")
     if (path === "" || path === moving) continue
     if (moving !== "" && path.indexOf(moving + sep) === 0) continue
     if (path === labelParent(moving, sep)) continue

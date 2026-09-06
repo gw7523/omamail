@@ -10,7 +10,7 @@ A message gains an agent button, in the reader's action bar and in the row's hov
 
 ## Where the job runs
 
-Not inside the shell. The window is a plugin in the process that draws the whole desktop, and a long-running child of it dies with `omarchy restart shell`, blocks nothing but is killed by everything. So a job is a transient **systemd user unit**: `systemd-run --user --unit omamail-agent-<id> --collect scripts/agent-job.sh <jobdir>`. It survives the shell, the window and the session's other restarts; its output is in the journal; and stopping it is `systemctl --user stop omamail-agent-<id>`, which is the whole of Cancel actions. This is what Omarchy uses for its own background work, so it is the native answer rather than a daemon of this plugin's own.
+Not inside the shell. The window is a plugin in the process that draws the whole desktop, and a long-running child of it dies with `omarchy restart shell`, blocks nothing but is killed by everything. So a job is a transient **systemd user unit**: `systemd-run --user --unit omamail-agent-<id> --collect scripts/agent-job.py <jobdir>`. It survives the shell, the window and the session's other restarts; its output is in the journal; and stopping it is `systemctl --user stop omamail-agent-<id>`, which is the whole of Cancel actions. This is what Omarchy uses for its own background work, so it is the native answer rather than a daemon of this plugin's own.
 
 The job directory is `$XDG_STATE_HOME/omamail/agent/<id>/`, mode 0700, and holds:
 

@@ -45,8 +45,13 @@ Item {
 
   function runner() { return pluginDir + "/scripts/agent-job.py" }
 
+  // A refresh asked for while a listing is in flight is not dropped: it runs
+  // as soon as that listing lands, so a job started during a poll is seen.
+  property bool refreshQueued: false
+
   function refresh() {
-    if (pluginDir === "" || lister.running) return
+    if (pluginDir === "") return
+    if (lister.running) { refreshQueued = true; return }
     lister.command = ["python3", runner(), "list"]
     lister.running = true
   }
@@ -134,8 +139,11 @@ Item {
     stdout: StdioCollector { waitForEnd: true }
     stderr: StdioCollector { waitForEnd: true }
     onExited: function(exitCode) {
-      if (exitCode !== 0) return
-      root.applyListing(String(stdout.text || ""))
+      if (exitCode === 0) root.applyListing(String(stdout.text || ""))
+      if (root.refreshQueued) {
+        root.refreshQueued = false
+        root.refresh()
+      }
     }
   }
 

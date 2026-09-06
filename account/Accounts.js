@@ -310,6 +310,14 @@ function namedIds(list) {
   return ids
 }
 
+// Whether a write has fewer named mailboxes than the last one persisted. An
+// id that changed — an address corrected on the setup page — is a rename,
+// not a loss; only a shorter list is what the guard exists to refuse.
+function shrinksMailboxes(ids, payload) {
+  var wanted = Array.isArray(ids) ? ids : []
+  return namedIds(payload).length < wanted.length
+}
+
 function dropsAnyId(ids, payload) {
   var wanted = Array.isArray(ids) ? ids : []
   var kept = namedIds(payload)

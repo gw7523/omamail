@@ -867,6 +867,9 @@ function draftFields(summary, body) {
     to: draftAddressText(source.to),
     cc: draftAddressText(source.cc),
     bcc: draftAddressText(source.bcc),
+    // A Reply-To the draft was saved with comes back into the field it was
+    // typed in, or the next save would drop it.
+    replyTo: String(source.replyTo && source.replyTo.email ? source.replyTo.email : ""),
     subject: subject === "(no subject)" ? "" : subject,
     body: String(body || ""),
     threadId: String(source.threadId || ""),
@@ -1125,10 +1128,24 @@ function nestedBoundary(outer) {
 function htmlBodyWithSignature(body, plainSignature, signatureHtml, direction) {
   var text = String(body === undefined || body === null ? "" : body)
   var sign = String(plainSignature === undefined || plainSignature === null ? "" : plainSignature).trim()
-  var at = sign === "" ? -1 : text.lastIndexOf(sign)
-  var before = at >= 0 ? text.slice(0, at) : text
-  var after = at >= 0 ? text.slice(at + sign.length) : ""
   var dir = Direction.isRightToLeft(direction) ? " dir=\"rtl\"" : ""
+  // The first occurrence: the writer's own sign-off comes before any quote
+  // that happens to repeat it. A plain signature the writer took out of the
+  // body is not put back as markup — the two readings must say the same.
+  var at = sign === "" ? -1 : text.indexOf(sign)
+  if (sign !== "" && at < 0)
+    return "<html><body" + dir + ">" + escapedParagraphs(text) + "</body></html>"
+  var before, after
+  if (at >= 0) {
+    before = text.slice(0, at)
+    after = text.slice(at + sign.length)
+  } else {
+    // A signature that is only a picture has no words to find: it goes
+    // where the plain one would have, before the quote if there is one.
+    var quoteAt = text.search(/(^|\n)>/)
+    before = quoteAt >= 0 ? text.slice(0, quoteAt) : text
+    after = quoteAt >= 0 ? text.slice(quoteAt) : ""
+  }
   return "<html><body" + dir + ">" + escapedParagraphs(before)
     + String(signatureHtml || "") + escapedParagraphs(after) + "</body></html>"
 }

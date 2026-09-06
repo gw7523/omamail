@@ -1245,7 +1245,7 @@ Item {
 
   function labelPathFor(id) {
     var label = service ? service.labelById(id) : null
-    return label ? String(label.rawName || label.name || "") : ""
+    return label ? String(label.name || label.rawName || "") : ""
   }
 
   // A name asked for, then handed to the service with what it was for. The
@@ -2655,6 +2655,8 @@ Item {
           // means that row alone, whatever else is ticked.
           var outside = root.checkedIds.indexOf(id) < 0
           root.cursorId = id
+          if ((action === "star" || action === "unstar") && root.selectionActive && !outside)
+            return root.actOnChecked(Model.starActionFor(Model.summariesById(root.service.messages, root.checkedIds)))
           root.actOnCursor(action, outside)
         }
       }

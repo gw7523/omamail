@@ -103,8 +103,11 @@ wait_state "$child" done failed cancelled
 [ "$(field "$child" messageId)" = "46:INBOX" ] || fail "the continuation is about the parent's message"
 [ "$(field "$child" subject)" = "Invoice" ] || fail "and keeps its subject"
 grep -q 'Pay me' "$jobs/$child/message.txt" || fail "the parent's message is carried forward"
-grep -q 'The owner asked:' "$jobs/$child/seen.txt" && grep -q 'QUESTION: Reply to Bob?' "$jobs/$child/seen.txt" \
-  && grep -q 'Yes, reply and say it is paid' "$jobs/$child/seen.txt" || fail "the prompt holds the earlier exchange and the answer"
+grep -q 'The ask:' "$jobs/$child/seen.txt" && grep -q 'Handle this' "$jobs/$child/seen.txt" \
+  && grep -q 'QUESTION: Reply to Bob?' "$jobs/$child/seen.txt" \
+  && grep -q 'Yes, reply and say it is paid' "$jobs/$child/seen.txt" || fail "the prompt is the parent's, then the answer and the owner's word"
+[ "$(field "$child" account)" = "ada@example.com" ] && [ "$(field "$child" folder)" = "INBOX" ] || fail "the continuation keeps the parent's account and folder"
+[ "$(field "$child" kind)" = "message" ] || fail "and its kind"
 printf '%s\n' '{"parent":"nope","command":"true","prompt":"p","message":""}' | python3 "$runner" new >/dev/null 2>&1 && fail "an unknown parent is refused"
 
 # Several messages: one file each, the prompt numbering them, the job naming every id.
@@ -114,6 +117,16 @@ wait_state "$many" done failed cancelled
 [ "$(field "$many" summary)" = "2" ] || fail "one file per message"
 python3 -c 'import json,sys; j=json.load(open(sys.argv[1])); assert j["messageIds"]==["50:INBOX","51:INBOX"], j["messageIds"]' "$jobs/$many/job.json" || fail "every id is on the job"
 grep -q 'Message 2 of 2' "$jobs/$many/seen.txt" && grep -q '2 email messages' "$jobs/$many/seen.txt" || fail "the prompt numbers the messages"
+
+# A continuation of a selection job and of a draft job both run, and carry
+# what the parent was about.
+sel=$(new_job '{"messages":[{"messageId":"80:INBOX","message":"one"},{"messageId":"81:INBOX","message":"two"}],"account":"a@x","folder":"INBOX","command":"echo \"QUESTION: all of them?\"","prompt":"File","message":""}')
+wait_state "$sel" done failed cancelled
+selc=$(new_job "{\"parent\":\"$sel\",\"command\":\"cat > seen.txt; echo done\",\"prompt\":\"Yes\",\"message\":\"\"}")
+wait_state "$selc" done failed cancelled
+[ "$(field "$selc" state)" = "done" ] || fail "a selection job can be continued"
+python3 -c 'import json,sys; j=json.load(open(sys.argv[1])); assert j["messageIds"]==["80:INBOX","81:INBOX"] and j["kind"]=="message"' "$jobs/$selc/job.json" || fail "and keeps its messages"
+grep -q 'Message 2 of 2' "$jobs/$selc/seen.txt" || fail "the parent prompt with both messages is read back"
 
 # The listing carries the agent's last line while it runs, and a tail that
 # looks like a permission prompt and stays still is reported as a stall.
@@ -147,4 +160,7 @@ wait_state "$dj" done failed cancelled
 grep -q 'The draft so far' "$jobs/$dj/seen.txt" && grep -q 'first try' "$jobs/$dj/seen.txt" && grep -q 'Rewrite this warmer' "$jobs/$dj/seen.txt" || fail "the prompt carries the draft and the ask"
 grep -q 'no preamble' "$jobs/$dj/seen.txt" || fail "the prompt asks for draft text only"
 grep -q 'Subject: Plan' "$jobs/$dj/draft.txt" || fail "the draft is kept beside the job"
+drc=$(new_job "{\"parent\":\"$dj\",\"command\":\"true\",\"prompt\":\"Shorter still\",\"message\":\"\"}")
+wait_state "$drc" done failed cancelled
+[ "$(field "$drc" kind)" = "draft" ] || fail "a draft job can be continued"
 echo "test_agent_job.sh ok"

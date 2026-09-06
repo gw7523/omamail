@@ -1113,19 +1113,22 @@ function encodeMailbox(name) {
   return out
 }
 
-// The three commands that change the folder list. Names travel encoded and
-// quoted; a RENAME carries every folder beneath the old name with it, which
-// is what moving a folder under another parent is.
+// The three commands that change the folder list. A name the server already
+// has travels exactly as LIST spelled it — the wire name, encoded once by
+// the server — and a name the user typed is encoded here. Encoding a wire
+// name again turns its "&" into "&-" and names a folder that does not exist.
+// A RENAME carries every folder beneath the old name with it, which is what
+// moving a folder under another parent is.
 function createCommand(name) {
   return "CREATE " + quote(encodeMailbox(name))
 }
 
-function renameCommand(from, to) {
-  return "RENAME " + quote(encodeMailbox(from)) + " " + quote(encodeMailbox(to))
+function renameCommand(fromWire, toName) {
+  return "RENAME " + quote(fromWire) + " " + quote(encodeMailbox(toName))
 }
 
-function deleteCommand(name) {
-  return "DELETE " + quote(encodeMailbox(name))
+function deleteCommand(wireName) {
+  return "DELETE " + quote(wireName)
 }
 
 // The SPECIAL-USE attributes this plugin cares about, mapped to the folder the

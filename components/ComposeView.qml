@@ -524,6 +524,8 @@ DropArea {
     ccVisible = ccField.text !== ""
     bccField.text = String(values.bcc || "")
     bccVisible = bccField.text !== ""
+    replyToField.text = String(values.replyTo || "")
+    replyToVisible = replyToField.text !== ""
     subjectField.text = String(values.subject || "")
     if (mode === "draft") {
       // Somebody wrote this and it was saved. None of it was placed, so all of

@@ -949,6 +949,11 @@ assert.strictEqual(binned.inTrash, false)
   deepEqual(model.togglePath(["Archive"], "Archive"), [])
   deepEqual(model.togglePath([], "Archive/2026"), ["Archive/2026"])
   deepEqual(model.labelTree(null, null), [])
+  // A label named like an Object property is still a label.
+  const odd = model.labelTree([{ id: "constructor", name: "constructor" },
+    { id: "constructor/2026", name: "constructor/2026" }, { id: "__proto__", name: "__proto__" },
+    { id: "toString", name: "toString" }], [])
+  deepEqual(odd.map(function (r) { return r.path }), ["__proto__", "constructor", "constructor/2026", "toString"])
 }
 
 // ------------------------------------------------------------ label names

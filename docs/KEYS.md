@@ -89,7 +89,7 @@ used to exist, and they had.
 |---|---|---|---|
 | `cursorDown` | `j`, `Down` | mail | Move down |
 | `cursorUp` | `k`, `Up` | mail | Move up |
-| `open` | `Return`, `o` | mail | Open the selected message |
+| `open` | `Return`, `Enter`, `o` | mail | Open the selected message |
 | `backToList` | `u` | reader | Back to the list |
 | `archive` | `e` | mail | Archive |
 | `trash` | `d` | mail | Move to trash |
@@ -112,7 +112,7 @@ used to exist, and they had.
 | `calendarToday` | `t` | calendar | Go to today |
 | `calendarWeek` | `w` | calendar | Show week view |
 | `calendarMonth` | `m` | calendar | Show month view |
-| `send` | `Ctrl+Return` | compose | Send |
+| `send` | `Ctrl+Return`, `Ctrl+Enter` | compose | Send |
 | `undoSend` | `Alt+Z` | all | Undo send |
 | `search` | `/` | mail | Search |
 | `goMailbox` | `Ctrl+1`, `Ctrl+2`, `Ctrl+3`, `Ctrl+4`, `Ctrl+5`, `Ctrl+6`, `Ctrl+7`, `Ctrl+8`, `Ctrl+9`, `Ctrl+0` | mail | Go to that mailbox |
@@ -170,7 +170,9 @@ no event, so what follows Ctrl still goes where it always went. It clears on
 waiting for one that is not coming would paint the numbers on permanently.
 
 `Escape` is the only bare key bound everywhere, because it is the way out of
-everywhere. Where it goes is not decided by the key: the window keeps a history
+everywhere. With rows ticked and the list on screen — alone, or beside the
+reader in a wide window — it unticks them first and goes nowhere; the next
+press goes back. Where it goes is not decided by the key: the window keeps a history
 of the places it has been — a stack in `App.qml`, ruled by
 `account/Navigation.js` — and `Escape`, like every Back bar, calls `back()`,
 which pops one entry. A draft, the event form and the shortcut sheet are

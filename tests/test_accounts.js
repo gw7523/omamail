@@ -698,3 +698,13 @@ assert.strictEqual(
   assert.strictEqual(accounts.setSignatureHtml(rich, "me@gmail.com", "").accounts[0].signatureHtml, "")
   assert.strictEqual(accounts.load(accounts.serialize(rich)).accounts[0].signatureHtml, "<p>Ada</p>")
 }
+
+// A renamed mailbox is not a dropped one: the guard counts, it does not match ids.
+{
+  const before = ["imap:jack@exmaple.org", "me@gmail.com"]
+  const renamed = { accounts: [{ id: "imap:jack@example.org", email: "jack@example.org" }, { id: "me@gmail.com", email: "me@gmail.com" }] }
+  assert.strictEqual(accounts.shrinksMailboxes(before, renamed), false, "same count, one id corrected")
+  assert.strictEqual(accounts.dropsAnyId(before, renamed), true, "which the id match alone would have refused")
+  const fewer = { accounts: [{ id: "me@gmail.com", email: "me@gmail.com" }] }
+  assert.strictEqual(accounts.shrinksMailboxes(before, fewer), true, "a shorter list is still refused")
+}

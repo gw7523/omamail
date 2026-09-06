@@ -3,24 +3,30 @@
 
 // A signature imported from a file: a picture, or a page of markup somebody
 // else's tool wrote. What is stored is never the file. A picture is checked
-// to be the raster it claims and wrapped in one `<img>`; markup is parsed by
-// `Html.js`, rebuilt by reading mode — which copies text, a checked href, a
-// checked src and numeric dimensions and nothing else — and then walked once
-// more against the short list below, so the argument does not rest on one
-// pass. Scripts, styles, event handlers, forms, frames, remote images and
-// every attribute not named here do not survive, and the count of what was
-// dropped is reported so the preview can say so.
+// to be the raster it claims and wrapped in one `<img>`; markup goes through
+// the same gate the reader trusts for a stranger's message — `Html.sanitize`,
+// which drops scripts, handlers and every fetch — and is then walked once
+// more here against a short list of what can never be in a signature, so
+// the argument does not rest on one pass. The formatting the file carries
+// — colours, faces, sizes, tables, alignment — is kept: it is what the
+// owner imported the file for. Scripts, styles blocks, forms, frames,
+// objects, event handlers, remote images and every address that is not a
+// public link, a mailto or an inline picture do not survive, and the count
+// of what was dropped is reported so the preview can say so.
 
 var MAX_HTML_BYTES = 256 * 1024
 var MAX_IMAGE_BYTES = 512 * 1024
 var MAX_DATA_IMAGES = 8
 
-var ALLOWED = {
-  p: ["dir"], br: [], div: ["dir"], span: [], b: [], strong: [], i: [], em: [], u: [],
-  a: ["href"], img: ["src", "width", "height", "alt"],
-  table: [], tbody: [], tr: [], td: ["colspan"], th: ["colspan"],
-  ul: [], ol: [], li: [], hr: [], h1: [], h2: [], h3: [], h4: [], blockquote: []
-}
+// What can never be in a signature, whatever the sanitiser kept: elements
+// that run, embed, or take input, and attributes that name an address or a
+// handler. Everything else — inline style without a url(), class, colour,
+// face, size, alignment, table geometry — stays.
+var FORBIDDEN_ELEMENTS = ["script", "style", "iframe", "frame", "frameset", "object", "embed", "applet",
+  "form", "input", "button", "select", "textarea", "option", "svg", "math", "template", "link", "meta",
+  "base", "video", "audio", "source", "track", "canvas", "noscript"]
+var FORBIDDEN_ATTRIBUTES = ["action", "formaction", "background", "srcset", "poster", "xlink:href",
+  "data", "codebase", "usemap", "ping", "manifest", "longdesc", "profile"]
 
 var RASTERS = [
   { mime: "image/png", magic: [0x89, 0x50, 0x4e, 0x47] },
@@ -101,7 +107,7 @@ function hrefOk(value) {
   return !!match && Html.isPublicHost(match[1])
 }
 
-// The second walk: keep what the short list names, drop the rest, count it.
+// The second walk: drop what can never be here, count it, keep the rest.
 function prune(node, ctx) {
   var kept = []
   for (var i = 0; i < node.children.length; i++) {
@@ -109,41 +115,27 @@ function prune(node, ctx) {
     if (child.type === "text") { kept.push(child); continue }
     if (child.type !== "element") { ctx.dropped++; continue }
     var name = String(child.name || "").toLowerCase()
-    if (!Object.prototype.hasOwnProperty.call(ALLOWED, name)) {
-      ctx.dropped++
-      // An unknown wrapper loses itself and keeps its words; an unknown leaf
-      // that could carry anything else — object, iframe, script — loses all.
-      if (name === "script" || name === "style" || name === "iframe" || name === "object"
-        || name === "embed" || name === "form" || name === "svg" || name === "template") continue
-      prune(child, ctx)
-      for (var u = 0; u < child.children.length; u++) kept.push(child.children[u])
-      continue
-    }
-    var allowedAttrs = ALLOWED[name]
+    if (FORBIDDEN_ELEMENTS.indexOf(name) >= 0) { ctx.dropped++; continue }
     var attrs = []
     var list = Array.isArray(child.attrs) ? child.attrs : []
     for (var a = 0; a < list.length; a++) {
       var attr = list[a]
       var attrName = String(attr.name || "").toLowerCase()
-      if (allowedAttrs.indexOf(attrName) < 0) { ctx.dropped++; continue }
       var value = String(attr.value === undefined ? "" : attr.value)
+      if (attrName.indexOf("on") === 0 || FORBIDDEN_ATTRIBUTES.indexOf(attrName) >= 0) { ctx.dropped++; continue }
       if (attrName === "href" && !hrefOk(value)) { ctx.dropped++; continue }
       if (attrName === "src") {
-        if (!dataImageOk(value, ctx.imageLimit) || ctx.images >= MAX_DATA_IMAGES) { ctx.dropped++; continue }
+        if (name !== "img" || !dataImageOk(value, ctx.imageLimit) || ctx.images >= MAX_DATA_IMAGES) { ctx.dropped++; continue }
         ctx.images++
       }
-      if ((attrName === "width" || attrName === "height" || attrName === "colspan") && !/^\d{1,4}$/.test(value)) { ctx.dropped++; continue }
-      if (attrName === "dir" && !/^(ltr|rtl)$/i.test(value)) { ctx.dropped++; continue }
+      // A style that fetches, runs, or hides text is dropped whole: a
+      // signature has no business carrying invisible words.
+      if (attrName === "style" && /url\s*\(|expression\s*\(|@import|behavior\s*:|javascript:|display\s*:\s*none|visibility\s*:\s*hidden|opacity\s*:\s*0(?![.\d])|font-size\s*:\s*0(?![.\d])|font-size\s*:\s*0?\.\d|text-indent\s*:\s*-/i.test(value)) { ctx.dropped++; continue }
       attrs.push({ name: attrName, value: value })
     }
     child.attrs = attrs
     child.name = name
     if (name === "img" && attrs.filter(function(x) { return x.name === "src" }).length === 0) { ctx.dropped++; continue }
-    if (name === "a" && attrs.length === 0) {
-      prune(child, ctx)
-      for (var t = 0; t < child.children.length; t++) kept.push(child.children[t])
-      continue
-    }
     prune(child, ctx)
     kept.push(child)
   }
@@ -153,8 +145,8 @@ function prune(node, ctx) {
 function sourceRemovals(source) {
   var text = String(source || "")
   var count = 0
-  var patterns = [/<\s*(script|style|iframe|object|embed|form|svg|template|link|meta)\b/gi,
-    /\son[a-z]+\s*=/gi, /javascript\s*:/gi, /\sstyle\s*=/gi, /\s(background|bgcolor|class|id)\s*=/gi]
+  var patterns = [/<\s*(script|style|iframe|object|embed|form|input|svg|template|link|meta)\b/gi,
+    /\son[a-z]+\s*=/gi, /javascript\s*:/gi, /url\s*\(/gi, /\sbackground\s*=/gi]
   for (var i = 0; i < patterns.length; i++) {
     var found = text.match(patterns[i])
     if (found) count += found.length
@@ -170,14 +162,13 @@ function importHtml(html, options) {
   var source = String(html === undefined || html === null ? "" : html)
   if (source.length > Math.max(1, Math.floor(Number(settings.maxHtmlBytes) || MAX_HTML_BYTES)))
     return { html: "", plain: "", dropped: 0, images: 0, problem: "That file is too large for a signature" }
-  var cleaned = Html.sanitize(source, { allowRemoteImages: false, keepColors: false })
-  var reader = Html.readerTree(Html.parse(cleaned.html), { allowRemoteImages: false })
-  // What the first two passes took out is counted from the source, since they
-  // report only images: every script, style, frame, form, handler and inline
-  // style the file carried is a removal the preview should own up to.
+  var cleaned = Html.sanitize(source, { allowRemoteImages: false, keepColors: true })
+  // What the sanitiser took out is counted from the source, since it reports
+  // only images: every script, frame, form and handler the file carried is a
+  // removal the preview should own up to.
   var ctx = { dropped: sourceRemovals(source) + cleaned.blockedImages, images: 0,
     imageLimit: Math.max(1, Math.floor(Number(settings.maxImageBytes) || MAX_IMAGE_BYTES)) }
-  var document = reader.document
+  var document = Html.parse(cleaned.html)
   prune(document, ctx)
   var text = Html.serialize(document)
   var read = Html.readTree(document)

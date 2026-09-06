@@ -937,5 +937,9 @@ assert.strictEqual(imap.createCommand("Archive/2026"), "CREATE \"Archive/2026\""
 assert.strictEqual(imap.renameCommand("Old", "Archive/New"), "RENAME \"Old\" \"Archive/New\"")
 assert.strictEqual(imap.deleteCommand("A \"quoted\" one"), "DELETE \"A \\\"quoted\\\" one\"")
 assert.strictEqual(imap.createCommand("日本語"), "CREATE \"&ZeVnLIqe-\"")
+// A name the server listed goes back as listed; only the typed name is
+// encoded. Encoding "Entw&APw-rfe" again would name "Entw&-APw-rfe".
+assert.strictEqual(imap.deleteCommand("Entw&APw-rfe"), "DELETE \"Entw&APw-rfe\"")
+assert.strictEqual(imap.renameCommand("Entw&APw-rfe", "Entwürfe/Alt"), "RENAME \"Entw&APw-rfe\" \"Entw&APw-rfe/Alt\"")
 
 console.log("Imap.js ok")

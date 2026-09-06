@@ -347,6 +347,7 @@ deepEqual(message.draftFields({
   to: "first@example.com, second@example.com",
   cc: "copy@example.com",
   bcc: "hidden@example.com",
+  replyTo: "",
   subject: "Saved subject",
   body: "Saved body",
   threadId: "thread-7",
@@ -425,6 +426,25 @@ assert.ok(message.buildRawMessage({ to: "jane@example.com", body: "x" }).indexOf
   assert.ok(html.indexOf('src="cid:sig1@omamail"') > 0)
   assert.strictEqual(html.indexOf("data:"), -1)
   assert.strictEqual((html.match(/Analyst/g) || []).length, 1, "the plain signature is not repeated under the markup")
+  // The two readings agree: a sign-off the writer removed is not put back
+  // in the HTML, the writer's own sign-off is the one replaced rather than a
+  // quoted copy, and a picture-only signature sits before the quote.
+  const removed = message.buildRawMessage({
+    to: "jane@example.com", body: "Hi Jane, thanks", signature: "Ada", signatureHtml: "<p><b>Ada</b></p>"
+  })
+  const removedHtml = Buffer.from(removed.split("Content-Type: text/html; charset=UTF-8\r\nContent-Transfer-Encoding: base64\r\n\r\n")[1].split("\r\n--")[0].replace(/\r\n/g, ""), "base64").toString("utf8")
+  assert.strictEqual(removedHtml.indexOf("<b>Ada</b>"), -1, "a removed sign-off stays removed")
+  const quoted = message.buildRawMessage({
+    to: "jane@example.com", body: "Thanks\n\nAda\n\n> hi\n> Ada", signature: "Ada", signatureHtml: "<p><b>Ada</b></p>"
+  })
+  const quotedHtml = Buffer.from(quoted.split("Content-Type: text/html; charset=UTF-8\r\nContent-Transfer-Encoding: base64\r\n\r\n")[1].split("\r\n--")[0].replace(/\r\n/g, ""), "base64").toString("utf8")
+  assert.ok(quotedHtml.indexOf("<b>Ada</b>") < quotedHtml.indexOf("&gt; hi"), "the writer's own sign-off is the one replaced")
+  assert.ok(quotedHtml.indexOf("&gt; Ada") > 0, "and the quoted copy stays quoted")
+  const picture = message.buildRawMessage({
+    to: "jane@example.com", body: "Thanks\n\n> hi", signature: "", signatureHtml: '<p><img src="data:image/png;base64,' + PNG + '"></p>'
+  })
+  const pictureHtml = Buffer.from(picture.split("Content-Type: text/html; charset=UTF-8\r\nContent-Transfer-Encoding: base64\r\n\r\n")[1].split("\r\n--")[0].replace(/\r\n/g, ""), "base64").toString("utf8")
+  assert.ok(pictureHtml.indexOf("<img") < pictureHtml.indexOf("&gt; hi"), "a picture signature sits before the quote")
   const plainOnly = message.buildRawMessage({
     to: "jane@example.com", body: "Hi\n\nAda", signature: "Ada", signatureHtml: "<p><b>Ada</b></p>"
   })
@@ -1114,3 +1134,7 @@ assert.strictEqual(message.composeBody("   \n  ", "> quoted"), "\n\n> quoted")
 assert.strictEqual(message.composeBody("\n\n", ""), "")
 
 console.log("test_message.js ok")
+
+// A draft reopened from the server keeps the Reply-To it was saved with.
+assert.strictEqual(message.draftFields({ replyTo: { email: "team@example.com" }, to: [] }, "x").replyTo, "team@example.com")
+assert.strictEqual(message.draftFields({ replyTo: { email: "" }, to: [] }, "x").replyTo, "")

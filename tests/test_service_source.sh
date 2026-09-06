@@ -73,9 +73,9 @@ if "Accounts.dropsNamedMailbox(accountList, %s)" % name not in save_block:
     raise SystemExit(
         "test_service_source.sh: a write that drops a named mailbox must be refused"
     )
-if "Accounts.dropsAnyId(lastPersistedIds, %s)" % name not in save_block:
+if "Accounts.shrinksMailboxes(lastPersistedIds, %s)" % name not in save_block:
     raise SystemExit(
-        "test_service_source.sh: a write must also be refused if it drops an id last persisted to disk"
+        "test_service_source.sh: a write must also be refused if it has fewer mailboxes than were last persisted to disk"
     )
 if "Accounts.serialize(%s)" % name not in save_block:
     raise SystemExit(

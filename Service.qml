@@ -116,7 +116,7 @@ Item {
     if (!summary) return false
     var body = current.selectedId === id && current.selectedBody ? String(current.selectedBody.text || "") : ""
     var line = Agent.payload(summary, body, current.accountEmail,
-      Agent.folderOf(id, current.mailboxKey), agentCommand, prompt)
+      Agent.folderOf(id, current.mailboxKey, current.providerId), agentCommand, prompt)
     if (!agentRunner.start(line)) return false
     current.note("Asked the agent")
     return true
@@ -600,7 +600,10 @@ Item {
     // `remove` or `removeAt`, so the row is gone from `accountList` too.
     if (Accounts.dropsNamedMailbox(accountList, writable)) return
     var allowDrop = !!(opts && opts.allowDrop)
-    if (!allowDrop && Accounts.dropsAnyId(lastPersistedIds, writable)) return
+    // Refused only when a mailbox would be lost, not when one changed its
+    // id: correcting an address renames the row, and a guard that refused
+    // that stayed refusing every later save in the session.
+    if (!allowDrop && Accounts.shrinksMailboxes(lastPersistedIds, writable)) return
     if (accountsWriter.running) {
       accountsSaveQueued = true
       if (allowDrop) accountsSaveQueuedAllowDrop = true

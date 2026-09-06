@@ -144,7 +144,7 @@ def command_new():
         parent = read_job(parent_dir)
         scope = scope or clean_text(parent.get("scope")).strip()
         message_id = message_id or clean_text(parent.get("messageId")).strip()
-    if command == "" or prompt == "" or (message_id == "" and scope == "" and not messages and draft is None):
+    if command == "" or prompt == "" or (message_id == "" and scope == "" and not messages and draft is None and parent is None):
         sys.stderr.write("agent-job.py new: command, prompt and a messageId, messages, a scope or a draft are required\n")
         return 2
 
@@ -159,6 +159,13 @@ def command_new():
     folder = clean_text(payload.get("folder")).strip()
     subject = clean_text(payload.get("subject")).strip()
     message = clean_text(payload.get("message"))
+    parent_message_ids = []
+    if parent is not None:
+        account = account or clean_text(parent.get("account")).strip()
+        folder = folder or clean_text(parent.get("folder")).strip()
+        subject = subject or clean_text(parent.get("subject")).strip()
+        ids = parent.get("messageIds")
+        parent_message_ids = [clean_text(i).strip() for i in ids] if isinstance(ids, list) else []
     with open(os.path.join(directory, "message.txt"), "w", encoding="utf-8") as handle:
         handle.write(message)
         if not message.endswith("\n"):
@@ -192,7 +199,24 @@ def command_new():
             handle.write("To: %s\nSubject: %s\n\n%s\n" % (
                 clean_text(draft.get("to")), clean_text(draft.get("subject")), clean_text(draft.get("body"))))
     with open(os.path.join(directory, "prompt.txt"), "w", encoding="utf-8") as handle:
-        if draft is not None:
+        if parent is not None:
+            # The parent's own prompt — rules, message or draft or scope, and
+            # its ask — then what the agent answered and what the owner says
+            # now. Nothing about the parent is rebuilt; it is read back.
+            parent_prompt = ""
+            try:
+                with open(os.path.join(state_dir(), parent_id, "prompt.txt"), "r", encoding="utf-8", errors="replace") as source:
+                    parent_prompt = source.read()
+            except OSError:
+                parent_prompt = "The owner asked:\n%s\n" % clean_text(parent.get("prompt"))
+            handle.write(parent_prompt)
+            if not parent_prompt.endswith("\n"):
+                handle.write("\n")
+            handle.write("\n--- You answered ---\n")
+            handle.write(read_output(os.path.join(state_dir(), parent_id)).strip())
+            handle.write("\n--- End of your answer ---\n\n")
+            handle.write("The owner's answer, and what to do now:\n%s\n" % prompt)
+        elif draft is not None:
             handle.write(DRAFT_RULES)
             handle.write("\nAccount address: %s\n" % account)
             handle.write("\n--- The draft so far ---\n")
@@ -223,13 +247,7 @@ def command_new():
                 handle.write("\nScope: every account. Their addresses: %s\n" % (", ".join(accounts) or "see `himalaya account list`"))
             else:
                 handle.write("\nScope: the account whose address is %s\n" % account)
-        if parent is not None:
-            handle.write("--- Earlier in this conversation ---\n")
-            handle.write("The owner asked:\n%s\n\n" % clean_text(parent.get("prompt")))
-            handle.write("You answered:\n%s\n" % read_output(os.path.join(state_dir(), parent_id)).strip())
-            handle.write("--- End of the earlier conversation ---\n\n")
-            handle.write("The owner's answer, and what to do now:\n%s\n" % prompt)
-        else:
+        if parent is None:
             handle.write("The ask:\n%s\n" % prompt)
 
     now = int(time.time())
@@ -237,9 +255,10 @@ def command_new():
         "id": job_id,
         "unit": unit_name(job_id),
         "messageId": message_id,
-        "messageIds": message_ids,
+        "messageIds": message_ids or parent_message_ids,
         "scope": scope,
-        "kind": "draft" if draft is not None else ("message" if (message_id or message_ids) else "scope"),
+        "kind": clean_text(parent.get("kind")).strip() if parent is not None
+        else ("draft" if draft is not None else ("message" if (message_id or message_ids) else "scope")),
         "parent": parent_id,
         "account": account,
         "folder": folder,
@@ -293,7 +312,9 @@ def read_output(directory, limit=OUTPUT_TAIL):
 
 
 def looks_like_prompt(line):
-    lowered = line.lower()
+    lowered = line.lower().rstrip()
+    if not lowered or lowered[-1] not in "?:])>":
+        return False
     return any(pattern in lowered for pattern in PERMISSION_PATTERNS)
 
 
