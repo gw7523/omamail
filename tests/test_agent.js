@@ -184,4 +184,23 @@ console.log("test_agent.js presets ok")
   deepEqual(agent.markSeen(["a"], "a"), ["a"])
   deepEqual(agent.markSeen(null, ""), [])
 }
+// The composer's draft job.
+{
+  const line = agent.draftPayload({ to: "ada@example.com", subject: " Plan ", body: "Hi\nthere" }, " Shorten ", "me@x", "claude -p")
+  assert.strictEqual(line.indexOf("\n"), -1)
+  const parsed = JSON.parse(line)
+  assert.strictEqual(parsed.draft.body, "Hi\nthere")
+  assert.strictEqual(parsed.subject, "Draft: Plan")
+  assert.strictEqual(parsed.prompt, "Shorten")
+  assert.strictEqual(JSON.parse(agent.draftPayload({}, "x", "", "c")).subject, "Draft")
+  assert.strictEqual(agent.isDraftJob({ kind: "draft" }), true)
+  assert.strictEqual(agent.isDraftJob({ kind: "message" }), false)
+  deepEqual(agent.draftJobs([{ id: "a", kind: "draft", created: 1 }, { id: "m", kind: "message" }, { id: "b", kind: "draft", created: 5 }])
+    .map(function (j) { return j.id }), ["b", "a"])
+  assert.ok(agent.draftAsks().length >= 5)
+  assert.ok(agent.draftAsks().every(function (a) { return a.id && a.label && a.prompt }))
+  assert.strictEqual(agent.draftAnswer({ state: "done" }, "Hi Ada,\n\nBetter.\n\nQUESTION: ok?\n"), "Hi Ada,\n\nBetter.")
+  assert.strictEqual(agent.draftAnswer({ state: "running" }, "x"), "")
+  assert.strictEqual(agent.draftAnswer({ state: "failed" }, "x"), "")
+}
 console.log("test_agent.js attention ok")

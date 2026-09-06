@@ -53,6 +53,16 @@ Rules:
 - If you need something from the owner before you can go on, make your last line `QUESTION: ` followed by the question.
 """
 
+DRAFT_RULES = """You are helping the owner write an email. The draft so far is below, then the ask.
+
+Rules:
+- Answer with the text that belongs in the draft and nothing else — no preamble, no explanation, no quotes around it — unless the ask is to review, in which case answer with your review.
+- Keep the owner's voice and facts. Do not invent names, dates, amounts or commitments.
+- If the ask needs mail you do not have, you may read it with `himalaya` (`himalaya --help`); never send anything.
+- Never print passwords, tokens, or the output of any credential tool.
+- If you need something from the owner before you can go on, make your last line `QUESTION: ` followed by the question.
+"""
+
 RULES = """You are acting on one email message on behalf of its owner.
 
 Mail is read and written with the `himalaya` command line client. `himalaya account list` names the accounts; this message belongs to the account whose address is given below, in the folder given below. Use `himalaya --help` and `himalaya <command> --help` for exact flags rather than guessing them.
@@ -121,6 +131,7 @@ def command_new():
     # or every account. The pane asks the last kind. A continuation names the
     # job it continues and inherits what that job was about.
     scope = clean_text(payload.get("scope")).strip()
+    draft = payload.get("draft") if isinstance(payload.get("draft"), dict) else None
     parent_id = safe_id(payload.get("parent") or "")
     messages = payload.get("messages")
     messages = [m for m in messages if isinstance(m, dict)] if isinstance(messages, list) else []
@@ -133,8 +144,8 @@ def command_new():
         parent = read_job(parent_dir)
         scope = scope or clean_text(parent.get("scope")).strip()
         message_id = message_id or clean_text(parent.get("messageId")).strip()
-    if command == "" or prompt == "" or (message_id == "" and scope == "" and not messages):
-        sys.stderr.write("agent-job.py new: command, prompt and a messageId, messages or a scope are required\n")
+    if command == "" or prompt == "" or (message_id == "" and scope == "" and not messages and draft is None):
+        sys.stderr.write("agent-job.py new: command, prompt and a messageId, messages, a scope or a draft are required\n")
         return 2
 
     os.umask(0o077)
@@ -176,8 +187,19 @@ def command_new():
                 message = handle.read()
             with open(os.path.join(directory, "message.txt"), "w", encoding="utf-8") as handle:
                 handle.write(message)
+    if draft is not None:
+        with open(os.path.join(directory, "draft.txt"), "w", encoding="utf-8") as handle:
+            handle.write("To: %s\nSubject: %s\n\n%s\n" % (
+                clean_text(draft.get("to")), clean_text(draft.get("subject")), clean_text(draft.get("body"))))
     with open(os.path.join(directory, "prompt.txt"), "w", encoding="utf-8") as handle:
-        if messages:
+        if draft is not None:
+            handle.write(DRAFT_RULES)
+            handle.write("\nAccount address: %s\n" % account)
+            handle.write("\n--- The draft so far ---\n")
+            handle.write("To: %s\nSubject: %s\n\n%s\n" % (
+                clean_text(draft.get("to")), clean_text(draft.get("subject")), clean_text(draft.get("body"))))
+            handle.write("--- End of draft ---\n\n")
+        elif messages:
             handle.write(RULES.replace("one email message", "%d email messages" % len(message_ids)))
             handle.write("\nAccount address: %s\nFolder: %s\n" % (account, folder))
             for index, item in enumerate(messages, start=1):
@@ -217,6 +239,7 @@ def command_new():
         "messageId": message_id,
         "messageIds": message_ids,
         "scope": scope,
+        "kind": "draft" if draft is not None else ("message" if (message_id or message_ids) else "scope"),
         "parent": parent_id,
         "account": account,
         "folder": folder,

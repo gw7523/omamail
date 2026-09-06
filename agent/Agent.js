@@ -453,3 +453,63 @@ function markSeen(seen, jobId) {
   if (id !== "" && list.indexOf(id) < 0) list.push(id)
   return list
 }
+
+// ------------------------------------------------------------ the draft
+
+// A job about the draft being written: the fields as the composer has them
+// and the ask. No message, no scope; the answer is text for the draft.
+function draftPayload(fields, ask, account, command) {
+  var values = fields || {}
+  return JSON.stringify({
+    messageId: "",
+    scope: "",
+    draft: {
+      to: String(values.to || ""),
+      subject: String(values.subject || ""),
+      body: String(values.body || "")
+    },
+    account: String(account || ""),
+    subject: String(values.subject || "").trim() === "" ? "Draft" : "Draft: " + String(values.subject).trim(),
+    command: String(command || ""),
+    prompt: String(ask || "").trim(),
+    message: ""
+  })
+}
+
+function isDraftJob(job) {
+  return !!job && String(job.kind || "") === "draft"
+}
+
+// The composer's own jobs, newest first — what its pane shows.
+function draftJobs(jobs) {
+  var list = Array.isArray(jobs) ? jobs : []
+  var out = []
+  for (var i = 0; i < list.length; i++) if (isDraftJob(list[i])) out.push(list[i])
+  out.sort(function(a, b) { return Number(b.created || 0) - Number(a.created || 0) })
+  return out
+}
+
+// The quick asks the composer offers. Each is a whole prompt, so what the
+// agent is told is exactly what the button says.
+var DRAFT_ASKS = [
+  { id: "review", label: "Review", prompt: "Review this draft: is it clear, complete and right in tone for its recipient? Answer with your review, not a rewrite." },
+  { id: "rewrite", label: "Rewrite", prompt: "Rewrite this draft so it reads clearly and naturally, keeping every fact and the owner's voice." },
+  { id: "shorten", label: "Shorten", prompt: "Shorten this draft to the fewest words that still say everything it says." },
+  { id: "expand", label: "Expand", prompt: "Expand this draft: fill in what a reader would need and the owner left implied, without inventing facts." },
+  { id: "formal", label: "More formal", prompt: "Rewrite this draft in a more formal register, keeping every fact." },
+  { id: "friendly", label: "Friendlier", prompt: "Rewrite this draft in a warmer, friendlier register, keeping every fact." },
+  { id: "notes", label: "From notes", prompt: "The body is notes. Write the email they describe, to this recipient, in the owner's voice." }
+]
+
+function draftAsks() { return DRAFT_ASKS.slice() }
+
+// What a draft job's answer is once it has one: the output minus a trailing
+// QUESTION line, trimmed, and "" while the job runs or if it failed.
+function draftAnswer(job, output) {
+  if (!job || isActive(job) || glyphState(job) === "failed") return ""
+  var text = String(output || "").replace(/\r\n/g, "\n")
+  var lines = text.split("\n")
+  while (lines.length > 0 && lines[lines.length - 1].trim() === "") lines.pop()
+  if (lines.length > 0 && lines[lines.length - 1].indexOf("QUESTION:") === 0) lines.pop()
+  return lines.join("\n").trim()
+}

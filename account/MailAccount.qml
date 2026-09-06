@@ -483,7 +483,7 @@ Item {
           if (remaining === 0) {
             root.monitoredLoading = false
             if (grown.length > 0) root.note(Model.monitoredNote(grown))
-            root.cacheStore.putLabels(root.labels)
+            cacheStore.putLabels(root.labels)
           }
         })
       })(String(ids[i]))
@@ -1969,8 +1969,29 @@ Item {
         return
       }
       root.reportSendSuccess(sentPayload)
+      if (payload && String(payload.draftId || "") !== "") root.forgetSentDraft(String(payload.draftId))
     })
     return true
+  }
+
+  // The draft a sent message was opened from is done with: the server's copy
+  // goes, and so does its row. A failure here is a footnote on a message
+  // that was sent, so it is noted rather than reported as a failure.
+  function forgetSentDraft(draftId) {
+    if (!api || typeof api.deleteDraft !== "function") return
+    api.deleteDraft(draftId, function(payload, error) {
+      if (!root) return
+      if (error) {
+        root.note("Sent, but the draft it came from could not be removed: " + String(error))
+        return
+      }
+      if (Model.indexById(root.messages, draftId) >= 0) {
+        root.messages = Model.removeById(root.messages, draftId)
+        root.rememberList()
+      }
+      if (root.selectedId === draftId) root.clearSelection()
+      root.refreshCounts()
+    })
   }
 
   function deliverPending() {
@@ -2011,6 +2032,9 @@ Item {
       to: String(values.to || "").trim(),
       cc: String(values.cc || "").trim(),
       bcc: String(values.bcc || "").trim(),
+      replyTo: String(values.replyTo || "").trim(),
+      signature: String(values.signature || ""),
+      signatureHtml: String(values.signatureHtml || ""),
       subject: String(values.subject || ""),
       body: String(values.body || ""),
       attachments: Array.isArray(values.attachments) ? values.attachments : [],
@@ -2057,6 +2081,9 @@ Item {
       to: to,
       cc: String(values.cc || "").trim(),
       bcc: String(values.bcc || "").trim(),
+      replyTo: String(values.replyTo || "").trim(),
+      signature: String(values.signature || ""),
+      signatureHtml: String(values.signatureHtml || ""),
       subject: String(values.subject || ""),
       body: body,
       attachments: Array.isArray(values.attachments) ? values.attachments : [],
@@ -2064,6 +2091,9 @@ Item {
       inReplyTo: values.inReplyTo,
       references: values.references
     })
+    // The draft this was opened from rides on the queued payload; the send
+    // itself carries only the raw message and the thread.
+    payload.draftId = String(values.draftId || "")
 
     var queued = Outbox.schedule(payload, Date.now(), undoSendSeconds)
     if (!queued) return deliver(payload)

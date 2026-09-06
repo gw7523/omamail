@@ -533,6 +533,11 @@ Item {
     pushEntry("reader", { id: cursorId })
   }
 
+  function openOrEdit(id) {
+    if (service && service.mailboxKey === "drafts" && editDraft(id)) return true
+    return openMessage(id)
+  }
+
   function editDraft(id) {
     if (!service || service.mailboxKey !== "drafts") return false
     var draftId = String(id || "")
@@ -925,7 +930,9 @@ Item {
     }
     if (id === "cursorDown") return moveCursor(1)
     if (id === "cursorUp") return moveCursor(-1)
-    if (id === "open") return openMessage(cursorId)
+    // In Drafts, opening a draft is editing it: the message is what was
+    // being written, and reading it is not what anyone came for.
+    if (id === "open") return openOrEdit(cursorId)
     if (id === "backToList") return backToList()
     if (id === "archive") return actOnCursor("archive")
     if (id === "trash") return actOnCursor("trash")
@@ -1758,7 +1765,7 @@ Item {
               cursorId: root.cursorId
               checkedIds: root.checkedIds
               urgentColor: root.urgent
-              onMessageActivated: function(id) { root.openMessage(id) }
+              onMessageActivated: function(id) { root.openOrEdit(id) }
               onAgentRequested: function(id, sceneX, sceneY) { root.openAgentFromRow(id, sceneX, sceneY) }
               onRowActionRequested: function(id, action) { root.actFromRow(id, action) }
               onCheckToggled: function(id) { root.toggleCheck(id) }
@@ -1883,6 +1890,12 @@ Item {
           id: compose
           anchors.fill: parent
           visible: opened && !root.showPage
+          agentOpen: composeAgent.opened
+          agentWorking: composeAgent.working
+          agentAttention: !!root.service && root.service.agentDraftJobs.length > 0
+            && Agent.wantsAttention(root.service.agentDraftJobs[0], [])
+            && !composeAgent.opened
+          onAgentRequested: function(sceneX, sceneY) { composeAgent.open() }
           service: root.service
           textColor: root.foreground
           backgroundColor: root.background
@@ -2479,6 +2492,26 @@ Item {
         onPaneRequested: function(jobId) { root.showAgentJob(jobId) }
         onLooked: function(jobId) { if (root.service) root.service.acknowledgeAgentJob(jobId) }
         onCancelRequested: function(id) { if (root.service) root.service.cancelAgent(id) }
+      }
+
+      ComposeAgent {
+        id: composeAgent
+        objectName: "compose-agent"
+        anchors.fill: parent
+        service: root.service
+        textColor: root.foreground
+        accentColor: root.accent
+        urgentColor: root.urgent
+        dimColor: root.dim
+        popupBackgroundColor: root.popupBackground
+        popupBorderColor: root.popupBorder
+        panelFontFamily: root.fontFamily
+        onAskRequested: function(ask) {
+          if (root.service) root.service.askAgentDraft(compose.currentFields(), ask)
+        }
+        onReplaceRequested: function(text) { compose.replaceBody(text) }
+        onInsertRequested: function(text) { compose.insertAtCursor(text) }
+        onLooked: function(jobId) { if (root.service) root.service.acknowledgeAgentJob(jobId) }
       }
 
       LabelMenu {

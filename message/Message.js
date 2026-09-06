@@ -1,6 +1,6 @@
 .pragma library
-
 .import "Direction.js" as Direction
+.import "Signature.js" as Signature
 
 // Everything that turns a Gmail API message resource into something a row or a
 // reader can show. Two things force real work here rather than a few property
@@ -1115,7 +1115,75 @@ function nestedBoundary(outer) {
 // bare `text/plain` already means to every client, so saying it would add an
 // HTML part to every message ever sent in order to repeat the default — the
 // same reason `Html.js` gives a document no `dir` when nothing chose one.
-function pushBodyPart(lines, body, direction, boundary) {
+// The body with an HTML signature: the plain text as the plain part, and an
+// HTML part that is the same text escaped, paragraph by paragraph, with the
+// stored signature markup in place of the plain signature at the end. The
+// signature's data: images travel as related parts by cid, because Gmail's
+// web client draws no data: image in HTML mail and a related part it does.
+// `multipart/related` holds the alternative and the images; `mixed` holds
+// that and any attachments, as before.
+function htmlBodyWithSignature(body, plainSignature, signatureHtml, direction) {
+  var text = String(body === undefined || body === null ? "" : body)
+  var sign = String(plainSignature === undefined || plainSignature === null ? "" : plainSignature).trim()
+  var at = sign === "" ? -1 : text.lastIndexOf(sign)
+  var before = at >= 0 ? text.slice(0, at) : text
+  var after = at >= 0 ? text.slice(at + sign.length) : ""
+  var dir = Direction.isRightToLeft(direction) ? " dir=\"rtl\"" : ""
+  return "<html><body" + dir + ">" + escapedParagraphs(before)
+    + String(signatureHtml || "") + escapedParagraphs(after) + "</body></html>"
+}
+
+function escapedParagraphs(text) {
+  var lines = String(text || "").replace(/\r\n/g, "\n").split("\n")
+  var out = []
+  for (var i = 0; i < lines.length; i++) {
+    out.push(lines[i].replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;"))
+  }
+  var joined = out.join("<br>")
+  return joined === "" ? "" : "<div>" + joined + "</div>"
+}
+
+function pushSignedBodyPart(lines, values, direction, boundary) {
+  var swapped = Signature.inlineParts(values.signatureHtml, "sig")
+  var html = htmlBodyWithSignature(values.body, values.signature, swapped.html, direction)
+  var alt = nestedBoundary(boundary)
+  var related = swapped.parts.length > 0 ? boundary : ""
+  if (related !== "") {
+    lines.push("Content-Type: multipart/related; boundary=\"" + related + "\"; type=\"multipart/alternative\"")
+    lines.push("")
+    lines.push("--" + related)
+  }
+  lines.push("Content-Type: multipart/alternative; boundary=\"" + alt + "\"")
+  lines.push("")
+  lines.push("--" + alt)
+  lines.push("Content-Type: text/plain; charset=UTF-8")
+  lines.push("Content-Transfer-Encoding: base64")
+  lines.push("")
+  lines.push(base64Body(values.body))
+  lines.push("--" + alt)
+  lines.push("Content-Type: text/html; charset=UTF-8")
+  lines.push("Content-Transfer-Encoding: base64")
+  lines.push("")
+  lines.push(base64Body(html))
+  lines.push("--" + alt + "--")
+  for (var i = 0; i < swapped.parts.length; i++) {
+    var part = swapped.parts[i]
+    lines.push("--" + related)
+    lines.push("Content-Type: " + part.mimeType)
+    lines.push("Content-Transfer-Encoding: base64")
+    lines.push("Content-ID: <" + part.cid + ">")
+    lines.push("Content-Disposition: inline")
+    lines.push("")
+    lines.push(mimeBase64(part.data))
+  }
+  if (related !== "") lines.push("--" + related + "--")
+}
+
+function pushBodyPart(lines, body, direction, boundary, values) {
+  if (values && String(values.signatureHtml || "") !== "") {
+    pushSignedBodyPart(lines, values, direction, boundary)
+    return
+  }
   if (!Direction.isRightToLeft(direction)) {
     lines.push("Content-Type: text/plain; charset=UTF-8")
     lines.push("Content-Transfer-Encoding: base64")
@@ -1148,6 +1216,9 @@ function buildRawMessage(fields) {
   lines.push(foldHeader("To", values.to || ""))
   if (values.cc) lines.push(foldHeader("Cc", values.cc))
   if (values.bcc) lines.push(foldHeader("Bcc", values.bcc))
+  // Where answers should go when that is not the sender: one header, folded
+  // like the rest, so a line break typed into it cannot start a second one.
+  if (values.replyTo) lines.push(foldHeader("Reply-To", values.replyTo))
   lines.push(foldHeader("Subject", values.subject || ""))
   var inReplyTo = referenceValue(values.inReplyTo)
   if (inReplyTo) {
@@ -1175,7 +1246,7 @@ function buildRawMessage(fields) {
   var direction = outgoingDirection(values.body)
 
   if (!calendar && included.length === 0) {
-    pushBodyPart(lines, values.body, direction, mimeBoundary(values.boundary))
+    pushBodyPart(lines, values.body, direction, mimeBoundary(values.boundary), values)
     return lines.join("\r\n") + "\r\n"
   }
 
@@ -1184,7 +1255,7 @@ function buildRawMessage(fields) {
     lines.push("Content-Type: multipart/mixed; boundary=\"" + mixedBoundary + "\"")
     lines.push("")
     lines.push("--" + mixedBoundary)
-    pushBodyPart(lines, values.body, direction, nestedBoundary(mixedBoundary))
+    pushBodyPart(lines, values.body, direction, nestedBoundary(mixedBoundary), values)
     for (var includedIndex = 0; includedIndex < included.length; includedIndex++) {
       var file = included[includedIndex]
       var filename = String(file.filename || "attachment")

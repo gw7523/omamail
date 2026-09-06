@@ -48,6 +48,7 @@ QML_FILES := Service.qml BarWidget.qml App.qml \
 	components/LabelMovePicker.qml \
 	components/NamePrompt.qml \
 	components/AddressMenu.qml \
+	components/ComposeAgent.qml \
 	agent/AgentRunner.qml \
 	components/ScopeButton.qml \
 	components/AccountRemovalDialog.qml \
@@ -76,6 +77,7 @@ test: test-js test-shell test-qml
 test-js:
 	node tests/test_compose_recovery.js
 	node tests/test_agent.js
+	node tests/test_signature.js
 	node tests/test_outbox.js
 	node tests/test_recipients.js
 	node tests/test_senders.js

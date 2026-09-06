@@ -346,7 +346,10 @@ Item {
         "once the newer draft is durable, recovery follows the older failed draft")
     }
 
-    function test_open_previews_a_draft_and_compose_edits_it() {
+    // In Drafts, opening a draft is editing it: `o` selects the draft and,
+    // once its body has loaded, the composer opens on it with what was
+    // written — no second key. `c` still does the same.
+    function test_open_edits_a_draft_once_its_body_has_loaded() {
       var compose = composeView()
       mailService.mailboxKey = "drafts"
       app.cursorId = "draft-7"
@@ -354,9 +357,7 @@ Item {
       app.runShortcut("open", "o")
 
       compare(mailService.selectedId, "draft-7")
-      compare(app.currentView, "reader",
-        "a draft opens in the same reader as every other message")
-      compare(app.composing, false)
+      compare(app.composing, false, "nothing to edit until the body is here")
 
       mailService.selectedMessage = ({
         id: "draft-7",
@@ -381,13 +382,7 @@ Item {
       mailService.detailLoading = false
       wait(30)
 
-      compare(app.composing, false,
-        "loading the draft body must not turn the preview into an editor")
-
-      app.runShortcut("compose", "c")
-      wait(30)
-
-      compare(app.composing, true)
+      compare(app.composing, true, "the loaded body opens the composer")
       compare(compose.mode, "draft")
       compare(compose.fromEmail, "me@example.com")
       compare(named(compose, "compose-to-field").text,

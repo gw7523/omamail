@@ -138,4 +138,13 @@ python3 "$runner" forget "$busy" >/dev/null 2>&1 && fail "a running job is not f
 [ -e "$jobs/$busy/job.json" ] || fail "and stays on disk"
 python3 "$runner" cancel "$busy"; wait_state "$busy" cancelled
 python3 "$runner" forget nope >/dev/null 2>&1 && fail "an unknown job is refused"
+# A draft job: the draft so far goes into the prompt, and the answer is the
+# text for the draft.
+dj=$(new_job '{"draft":{"to":"ada@example.com","subject":"Plan","body":"Hi Ada,\n\nfirst try"},"account":"me@example.com","command":"cat > seen.txt; echo Hi Ada,; echo; echo A better try","prompt":"Rewrite this warmer","message":""}')
+wait_state "$dj" done failed cancelled
+[ "$(field "$dj" state)" = "done" ] || fail "a draft job runs"
+[ "$(field "$dj" kind)" = "draft" ] || fail "and is a draft kind"
+grep -q 'The draft so far' "$jobs/$dj/seen.txt" && grep -q 'first try' "$jobs/$dj/seen.txt" && grep -q 'Rewrite this warmer' "$jobs/$dj/seen.txt" || fail "the prompt carries the draft and the ask"
+grep -q 'no preamble' "$jobs/$dj/seen.txt" || fail "the prompt asks for draft text only"
+grep -q 'Subject: Plan' "$jobs/$dj/draft.txt" || fail "the draft is kept beside the job"
 echo "test_agent_job.sh ok"
