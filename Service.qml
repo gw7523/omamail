@@ -4,6 +4,8 @@ import Quickshell.Io
 import qs.Commons
 import "account"
 import "calendar"
+import "agent"
+import "agent/Agent.js" as Agent
 
 import "account/Accounts.js" as Accounts
 import "account/Model.js" as Model
@@ -61,6 +63,7 @@ Item {
     heavyMessageRendering: Html.HEAVY_MESSAGE_RENDERING_DEFAULT,
     contentDirection: Direction.MODE_DEFAULT,
     defaultQuery: "in:inbox",
+    agentCommand: "",
     notifyNewMail: "On",
     oauthPort: 9481,
     undoSendSeconds: 10,
@@ -73,6 +76,122 @@ Item {
   readonly property bool alwaysRenderHeavyMessages: Html.alwaysRenderHeavyMessages(
     settings ? settings.heavyMessageRendering : null)
   readonly property bool notifyNewMail: String(settings ? settings.notifyNewMail : "On") !== "Off"
+  // The default agent's command line, or "" for no agent — in which case no
+  // agent button is drawn anywhere. docs/AGENT.md.
+  readonly property string agentCommand: String(settings ? settings.agentCommand || "" : "").trim()
+  readonly property bool hasAgent: Agent.hasAgent(agentCommand)
+  readonly property var agentJobs: agentRunner.byMessage
+  // Whether any job wants the owner, and which messages' jobs do: what the
+  // agent buttons pulse for. Opening a job's popup or card is what stops it.
+  readonly property bool agentAttention: agentRunner.attention
+  readonly property var agentAttentionByMessage: agentRunner.attentionByMessage
+  function acknowledgeAgentJob(jobId) { agentRunner.acknowledge(jobId) }
+  readonly property bool agentBusy: agentRunner.anyActive
+
+  function agentJobFor(messageId) { return agentRunner.jobFor(messageId) }
+
+  // Which harness binaries are on PATH, so Settings can say which presets
+  // will actually run. Looked up once per service; a newly installed CLI
+  // shows up after the next shell restart, which is when PATH changes anyway.
+  property var agentToolsFound: []
+  readonly property var agentPresetOptions: Agent.presetOptions(agentToolsFound)
+
+  function findAgentTools() {
+    if (agentToolFinder.running) return
+    var names = Agent.presetBinaries()
+    var script = ""
+    for (var i = 0; i < names.length; i++) script += "command -v " + names[i] + " 2>/dev/null; "
+    agentToolFinder.command = ["/bin/sh", "-c", script]
+    agentToolFinder.running = true
+  }
+
+  // The message as the list knows it plus the text the reader has, handed to
+  // the runner on one line. The body is only there when the message is the
+  // open one; the agent can read the rest itself.
+  function askAgent(messageId, prompt) {
+    if (!current || !hasAgent) return false
+    var id = String(messageId || "")
+    var index = Model.indexById(current.messages, id)
+    var summary = index >= 0 ? current.messages[index]
+      : (current.selectedId === id ? current.selectedMessage : null)
+    if (!summary) return false
+    var body = current.selectedId === id && current.selectedBody ? String(current.selectedBody.text || "") : ""
+    var line = Agent.payload(summary, body, current.accountEmail,
+      Agent.folderOf(id, current.mailboxKey, current.providerId), agentCommand, prompt)
+    if (!agentRunner.start(line)) return false
+    current.note("Asked the agent")
+    return true
+  }
+
+  // The pane's jobs and the one it is reading, forwarded so a view never
+  // reaches past `service`.
+  readonly property var agentPaneJobs: agentRunner.jobs
+  readonly property string agentShownId: agentRunner.shownId
+  readonly property string agentShownOutput: agentRunner.shownOutput
+
+  function showAgentJob(jobId) { agentRunner.show(jobId) }
+
+  // An ask across the open account, or every account. No message crosses;
+  // the agent is told the addresses and does its own reading.
+  function askAgentScope(prompt, everyAccount) {
+    if (!current || !hasAgent) return false
+    var addresses = []
+    var list = sendIdentities || []
+    for (var i = 0; i < list.length; i++) if (list[i].email) addresses.push(String(list[i].email))
+    var scope = Agent.scopeOf(everyAccount === true, current.accountEmail)
+    var line = Agent.scopePayload(prompt, scope, current.accountEmail, addresses, agentCommand)
+    if (!agentRunner.start(line)) return false
+    return true
+  }
+
+  // The answer to a question, or a follow-up: a new job that continues the
+  // one named, with the runner rebuilding the prompt from it.
+  function answerAgent(jobId, answer) {
+    if (!hasAgent) return false
+    var job = agentRunner.jobFor2(jobId)
+    if (!job || String(answer || "").trim() === "") return false
+    if (!agentRunner.start(Agent.continuationPayload(job, answer, agentCommand))) return false
+    if (current) current.note("Answered the agent")
+    return true
+  }
+
+  // One job over several messages, as the list knows them.
+  function askAgentMany(ids, prompt) {
+    if (!current || !hasAgent) return false
+    var summaries = Model.summariesById(current.messages, ids)
+    if (summaries.length === 0) return false
+    var line = Agent.selectionPayload(summaries, current.accountEmail, current.mailboxKey, agentCommand, prompt)
+    if (!agentRunner.start(line)) return false
+    current.note("Asked the agent about " + Agent.pluralizeMessages(summaries.length))
+    return true
+  }
+
+  function forgetAgentJob(jobId) { return agentRunner.forget(jobId) }
+  function forgetFinishedAgentJobs() { return agentRunner.forgetFinished() }
+
+  // The composer's asks: the draft as it stands and what to do with it.
+  readonly property var agentDraftJobs: Agent.draftJobs(agentRunner.jobs)
+
+  function askAgentDraft(fields, ask) {
+    if (!current || !hasAgent) return false
+    var line = Agent.draftPayload(fields, ask, current.accountEmail, agentCommand)
+    if (!agentRunner.start(line)) return false
+    return true
+  }
+
+  function cancelAgentJob(jobId) {
+    var job = agentRunner.jobFor2(jobId)
+    if (!job || !Agent.isActive(job) || agentRunner.cancelling) return false
+    return agentRunner.cancelById(jobId)
+  }
+
+  function cancelAgent(messageId) {
+    if (!agentRunner.cancel(messageId)) return false
+    if (current) current.note("Cancelling the agent's actions")
+    return true
+  }
+
+  function refreshAgentJobs() { agentRunner.refresh() }
   // Which way a message's own text is read: worked out from the text, or fixed
   // by the reader. The window's chrome is not affected either way — this is a
   // fact about the mail, not about the interface around it.
@@ -1260,6 +1379,23 @@ Item {
   }
 
   Process {
+    id: agentToolFinder
+    stdout: StdioCollector { waitForEnd: true }
+    stderr: StdioCollector { waitForEnd: true }
+    onExited: root.agentToolsFound = Agent.foundBinaries(String(stdout.text || ""))
+  }
+
+  AgentRunner {
+    id: agentRunner
+    pluginDir: root.pluginDir
+    onJobFinished: function(job) {
+      var text = Agent.finishedNote(job)
+      if (text !== "" && root.current) root.current.note(text)
+    }
+    onFailed: function(text) { if (root.current) root.current.fail(text) }
+  }
+
+  Process {
     id: windowWriter
     stdinEnabled: true
     stdout: StdioCollector { waitForEnd: true }
@@ -1319,6 +1455,7 @@ Item {
   }
 
   Component.onCompleted: {
+    Qt.callLater(root.findAgentTools)
     Qt.callLater(root.refreshRecipientContacts)
     Qt.callLater(root.registerMailtoHandler)
   }

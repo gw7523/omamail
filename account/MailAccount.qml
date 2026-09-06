@@ -2251,7 +2251,6 @@ Item {
     })
   }
 
-
   function deliverPending() {
     if (!sendPending) return false
     var payload = pendingSend.payload
@@ -2345,7 +2344,6 @@ Item {
       }
     })
   }
-
 
   function send(fields) {
     if (sending || sendPending) return false
