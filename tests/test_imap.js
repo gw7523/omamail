@@ -942,4 +942,15 @@ assert.strictEqual(imap.createCommand("日本語"), "CREATE \"&ZeVnLIqe-\"")
 assert.strictEqual(imap.deleteCommand("Entw&APw-rfe"), "DELETE \"Entw&APw-rfe\"")
 assert.strictEqual(imap.renameCommand("Entw&APw-rfe", "Entwürfe/Alt"), "RENAME \"Entw&APw-rfe\" \"Entw&APw-rfe/Alt\"")
 
+// Sending through Graph is a setting with a token account of its own.
+assert.strictEqual(imap.sendsViaGraph({ send: "graph" }), true)
+assert.strictEqual(imap.sendsViaGraph({ send: "Graph " }), true)
+assert.strictEqual(imap.sendsViaGraph({}), false)
+assert.strictEqual(imap.normalizeSettings({ imapHost: "outlook.office365.com", send: "graph", graphTokenAccount: " sfl-graph " }).send, "graph")
+assert.strictEqual(imap.normalizeSettings({ imapHost: "outlook.office365.com", send: "graph", graphTokenAccount: " sfl-graph " }).graphTokenAccount, "sfl-graph")
+assert.strictEqual(imap.normalizeSettings({ imapHost: "x.example.com", send: "smtp" }).send, "", "anything but graph is the SMTP default")
+assert.ok(imap.validateSettings({ imapHost: "outlook.office365.com", username: "j@x", send: "graph" }).error.indexOf("Graph") >= 0,
+  "Graph without a token account is refused")
+assert.strictEqual(imap.validateSettings({ imapHost: "outlook.office365.com", username: "j@x", send: "graph", graphTokenAccount: "g" }).ok, true)
+
 console.log("Imap.js ok")

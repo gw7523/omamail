@@ -320,6 +320,40 @@ Item {
     }
   }
 
+  // A token of Graph's audience, for the send path that goes through Graph.
+  // Looked up when a message is sent, through the same helper as the IMAP
+  // token; ortie holds and refreshes it. Not cached here: a send is rare and
+  // the helper is quick.
+  property var graphWaiters: []
+
+  function withGraphToken(callback) {
+    if (typeof callback !== "function") return
+    var account = Imap.graphTokenAccountOf(settings)
+    if (account === "") {
+      callback("", "Name the token account for Microsoft Graph in this mailbox's settings")
+      return
+    }
+    graphWaiters = graphWaiters.concat([callback])
+    if (graphLookup.running) return
+    graphLookup.command = ["/bin/sh", "-c",
+      'exec "$(command -v ortie || printf %s "$HOME/.local/bin/ortie")" token show -r -a "$0"',
+      account]
+    graphLookup.running = true
+  }
+
+  Process {
+    id: graphLookup
+    stdout: StdioCollector { id: graphOutput; waitForEnd: true }
+    stderr: StdioCollector { waitForEnd: true }
+    onExited: function(exitCode) {
+      var value = exitCode === 0 ? Secrets.fromKeyring(graphOutput.text) : ""
+      var waiters = root.graphWaiters
+      root.graphWaiters = []
+      for (var i = 0; i < waiters.length; i++)
+        waiters[i](value, value === "" ? "No Microsoft Graph token for this mailbox. Sign in with ortie for its Graph account" : "")
+    }
+  }
+
   Process {
     id: keyringStore
     stdinEnabled: true
