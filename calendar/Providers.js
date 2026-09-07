@@ -84,6 +84,12 @@ var LIST = [
     helpUrl: "", helpText: ""
   },
   {
+    id: "microsoft", name: "Microsoft", kind: "microsoft",
+    url: "", usernameHint: "", passwordHint: "",
+    note: "Outlook.com and Microsoft 365 calendars come with the mailbox: add an Outlook mailbox under Accounts and sign in, and its calendar appears here on its own.",
+    helpUrl: "", helpText: ""
+  },
+  {
     id: "google", name: "Google", kind: "google",
     url: "", usernameHint: "", passwordHint: "",
     note: "Google calendars come with a Gmail mailbox: add one under Accounts and sign in, and its calendars appear here on their own.",

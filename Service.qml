@@ -2068,6 +2068,22 @@ Item {
     callback("", "The Google calendar account is not signed in")
   }
 
+  // A Microsoft calendar is reached with the mailbox's own Graph token, the
+  // one its sends use; the sign-in asks for the calendar scope beside it.
+  function withMicrosoftAccessToken(accountId, callback) {
+    var accounts = accountList && accountList.accounts ? accountList.accounts : []
+    for (var i = 0; i < accounts.length; i++) {
+      if (accounts[i] && accounts[i].id === accountId && accounts[i].provider === "outlook") {
+        var host = accountHosts.objectAt(i)
+        if (host && host.auth && typeof host.auth.withGraphToken === "function") {
+          host.auth.withGraphToken(callback)
+          return
+        }
+      }
+    }
+    callback("", "The Microsoft calendar account is not signed in")
+  }
+
   signal replySent(string sendId)
   signal replyFailed(string sendId)
 
