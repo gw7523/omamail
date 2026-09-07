@@ -331,6 +331,32 @@ Item {
     })
   }
 
+  // Labels, changed. A nested label is a name with "/" in it, so a move is a
+  // rename to the new path; Gmail renames the labels beneath it with it.
+  function createLabel(name, callback) {
+    return request("POST", Api.labelsPath(), null, {
+      name: String(name || ""),
+      labelListVisibility: "labelShow",
+      messageListVisibility: "show"
+    }, function(status, payload, error) {
+      if (typeof callback === "function") callback(payload, error)
+    })
+  }
+
+  function renameLabel(id, name, callback) {
+    return request("PATCH", Api.labelPath(id), null, { name: String(name || "") },
+      function(status, payload, error) {
+        if (typeof callback === "function") callback(payload, error)
+      })
+  }
+
+  function deleteLabel(id, callback) {
+    return request("DELETE", Api.labelPath(id), null, null,
+      function(status, payload, error) {
+        if (typeof callback === "function") callback(payload, error)
+      })
+  }
+
   // One id or a list of them: a row that stands for a conversation is trashed
   // as its members, and the list arrives here flat.
   //
