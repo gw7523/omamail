@@ -9,7 +9,7 @@ const ids = {}
 for (const preset of providers.LIST) {
   assert.ok(!ids[preset.id], "ids are unique: " + preset.id)
   ids[preset.id] = true
-  assert.ok(["caldav", "google"].indexOf(preset.kind) >= 0, preset.id + " has a known kind")
+  assert.ok(["caldav", "google", "microsoft"].indexOf(preset.kind) >= 0, preset.id + " has a known kind")
   if (preset.kind === "caldav") {
     const address = preset.url || preset.urlHint
     assert.ok(/^https:\/\//.test(address), preset.id + " starts from an HTTPS address")

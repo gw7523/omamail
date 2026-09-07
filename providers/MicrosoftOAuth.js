@@ -22,7 +22,10 @@ var SCOPES = [
 // second token — asked for with the same refresh token, which Microsoft lets
 // a public client exchange for any resource the registration was consented
 // for.
-var GRAPH_SCOPES = ["https://graph.microsoft.com/Mail.Send"]
+var GRAPH_SCOPES = [
+  "https://graph.microsoft.com/Mail.Send",
+  "https://graph.microsoft.com/Calendars.ReadWrite"
+]
 
 // The tenant the sign-in is addressed to. Personal accounts live under
 // `consumers`; a Microsoft 365 mailbox lives under its own tenant, which
@@ -120,10 +123,22 @@ function graphRefreshBody(clientId, refreshToken) {
   return refreshTokenBody(clientId, refreshToken, GRAPH_SCOPES)
 }
 
-// Whether a Graph token answered with the one scope sending needs.
+// Whether a Graph token answered with the scope sending needs, and whether
+// with the one the calendar needs. A registration consented for one and
+// not the other is told which.
 function missingGraphScope(granted) {
   var have = String(granted || "").toLowerCase().split(/\s+/)
   return have.indexOf(GRAPH_SCOPES[0].toLowerCase()) < 0
+}
+
+function missingCalendarScope(granted) {
+  var have = String(granted || "").toLowerCase().split(/\s+/)
+  return have.indexOf(GRAPH_SCOPES[1].toLowerCase()) < 0
+}
+
+function calendarScopeMessage() {
+  return "Microsoft did not grant the Calendars.ReadWrite permission for Microsoft Graph. "
+    + "Add it to the app registration, then sign in again"
 }
 
 function graphScopeMessage() {
