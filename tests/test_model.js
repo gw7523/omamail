@@ -1506,3 +1506,10 @@ assert.strictEqual(model.monitoredNote([]), "")
 // A provider with no move verb is told so in the hints, the way archive is.
 deepEqual(model.unavailableActions({ archive: true, star: true, move: true }), [])
 deepEqual(model.unavailableActions({ archive: true, star: true }), ["moveToLabel"])
+// ------------------------------------------------------------ activity strip
+
+assert.strictEqual(model.activityStatus({}), "", "nothing in flight says nothing")
+assert.strictEqual(model.activityStatus({ sending: 1 }), "Sending")
+assert.strictEqual(model.activityStatus({ sending: 2, queuedSends: 3 }), "Sending 2 \u00b7 3 queued to send")
+assert.strictEqual(model.activityStatus({ running: 1, waiting: 4 }), "1 action running \u00b7 4 waiting")
+assert.strictEqual(model.activityStatus({ sending: "x", waiting: -2 }), "", "nonsense counts are zero")
