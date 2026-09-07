@@ -242,6 +242,8 @@ Right-click does the rest. On a label in the rail: rename it, make a label besid
 | `Alt+A` | Switch account |
 | `Space` / `x` | Select the message; `e`, `d`, `s`, `v`, `Shift+I`, `Shift+U` then act on every selected one |
 | `Ctrl+A` | Select every message loaded, or none |
+| `Alt+G` | Ask the default agent about the message, when one is set in Settings |
+| `Ctrl+Shift+G` | The agent pane: an ask across this mailbox or every mailbox |
 | `Ctrl+=` / `Ctrl+-` / `Ctrl+0` | Zoom the message body, or reset it |
 | `F5` / `Ctrl+R` | Check for mail |
 | `?` | Every shortcut |

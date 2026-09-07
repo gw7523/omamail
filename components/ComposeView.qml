@@ -79,6 +79,35 @@ DropArea {
   // Where answers should go when that is not the sender. Hidden like Bcc
   // until asked for: most mail has no use for it.
   property bool replyToVisible: false
+
+  // The agent's card over this draft: whether it is up, working, or wants
+  // the owner — all facts the window passes down.
+  property bool agentOpen: false
+  property bool agentWorking: false
+  property bool agentAttention: false
+  signal agentRequested(real sceneX, real sceneY)
+
+  // What the agent is handed, and how its answer lands. Replacing the body
+  // counts as an edit — it is one — so the signature is not placed over it.
+  function currentFields() {
+    return ({ to: toField.text, subject: subjectField.text, body: bodyEdit.text })
+  }
+
+  function replaceBody(text) {
+    bodyEdit.text = String(text || "")
+    bodyWasEdited = true
+    bodyEdit.cursorPosition = bodyEdit.length
+    noteDraftChanged()
+  }
+
+  function insertAtCursor(text) {
+    var insert = String(text || "")
+    if (insert === "") return
+    var at = Math.max(0, Math.min(bodyEdit.length, bodyEdit.cursorPosition))
+    bodyEdit.insert(at, insert)
+    bodyWasEdited = true
+    noteDraftChanged()
+  }
   property string fromEmail: ""
   property var replyRecipients: []
   property bool fromWasChosen: false
@@ -1818,6 +1847,25 @@ DropArea {
         fontFamily: root.panelFontFamily
         enabled: !!root.service && !root.attaching
         onClicked: root.chooseFiles()
+      }
+
+      // The agent, beside the draft: only where one is set, lit while its
+      // card is up, pulsing when an answer or a question is waiting.
+      IconButton {
+        objectName: "compose-agent-button"
+        anchors.verticalCenter: parent.verticalCenter
+        visible: !!root.service && root.service.hasAgent
+        iconName: "agent"
+        tooltipText: "Ask the agent about this draft"
+        foreground: root.agentWorking ? root.accentColor : root.dimColor
+        hoverColor: root.textColor
+        fontFamily: root.panelFontFamily
+        selected: root.agentOpen
+        attention: root.agentAttention
+        onClicked: {
+          var scene = mapToGlobal(0, 0)
+          root.agentRequested(scene.x, scene.y)
+        }
       }
 
       Button {
