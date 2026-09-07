@@ -188,6 +188,15 @@ Column {
         font.family: root.panelFontFamily
         font.pixelSize: Style.font.bodySmall
       }
+
+      // The slider alone does not say which way is on.
+      Text {
+        anchors.verticalCenter: parent.verticalCenter
+        text: workSwitch.checked ? "On" : "Off"
+        color: workSwitch.checked ? root.accentColor : root.dimColor
+        font.family: root.panelFontFamily
+        font.pixelSize: Style.font.caption
+      }
     }
 
     Row {
@@ -211,7 +220,16 @@ Column {
         font.family: root.panelFontFamily
         font.pixelSize: Style.font.bodySmall
         wrapMode: Text.WordWrap
-        width: parent.width - graphSwitch.width - Style.space(10)
+        width: parent.width - graphSwitch.width - graphState.width - Style.space(20)
+      }
+
+      Text {
+        id: graphState
+        anchors.verticalCenter: parent.verticalCenter
+        text: graphSwitch.checked ? "On" : "Off"
+        color: graphSwitch.checked ? root.accentColor : root.dimColor
+        font.family: root.panelFontFamily
+        font.pixelSize: Style.font.caption
       }
     }
 
