@@ -37,6 +37,8 @@ var GRAPH_SCOPES = [
 // for, and the Graph scopes the same refresh token is later exchanged for.
 // Consent is collected once, here; a Graph exchange for a scope nobody
 // consented to is refused by Microsoft as a bad grant, not asked about.
+// Only the device-code request may name both resources: every token
+// request after it — the refresh, the Graph exchange — names one.
 var SIGN_IN_SCOPES = SCOPES.concat(GRAPH_SCOPES)
 
 function normalizeTenant(value) {

@@ -132,3 +132,5 @@ console.log("test_microsoft_oauth.js ok")
 assert.ok(microsoft.SIGN_IN_SCOPES.indexOf("https://outlook.office.com/IMAP.AccessAsUser.All") >= 0)
 assert.ok(microsoft.SIGN_IN_SCOPES.indexOf("https://graph.microsoft.com/Mail.Send") >= 0)
 assert.ok(microsoft.deviceAuthorizationBody(clientId, microsoft.SIGN_IN_SCOPES).indexOf("Mail.Send") >= 0)
+assert.ok(microsoft.refreshTokenBody(clientId, "r", microsoft.SCOPES).indexOf("graph.microsoft.com") < 0,
+  "a refresh names the mail resource alone; two resources in one token request are refused")
