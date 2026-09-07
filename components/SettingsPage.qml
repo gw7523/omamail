@@ -363,6 +363,52 @@ Column {
 
   Rectangle {
     width: parent.width
+    implicitHeight: Math.max(sentTimeText.implicitHeight, sentTimeSwitch.implicitHeight)
+      + Style.space(16)
+    radius: Style.cornerRadius
+    color: Style.normalFillFor(root.textColor, root.accentColor)
+
+    Column {
+      id: sentTimeText
+      anchors.left: parent.left
+      anchors.leftMargin: Style.space(12)
+      anchors.right: sentTimeSwitch.left
+      anchors.rightMargin: Style.space(10)
+      anchors.verticalCenter: parent.verticalCenter
+      spacing: Style.space(2)
+
+      Text {
+        width: parent.width
+        text: "Show when a message was sent"
+        color: root.textColor
+        font.family: root.panelFontFamily
+        font.pixelSize: Style.font.bodySmall
+      }
+
+      Text {
+        width: parent.width
+        text: "The reader names the sender's time beside the time the message arrived"
+        color: root.dimColor
+        font.family: root.panelFontFamily
+        font.pixelSize: Style.font.caption
+        wrapMode: Text.WordWrap
+      }
+    }
+
+    ToggleSwitch {
+      id: sentTimeSwitch
+      anchors.right: parent.right
+      anchors.rightMargin: Style.space(10)
+      anchors.verticalCenter: parent.verticalCenter
+      checked: !!root.service && root.service.readerShowsSentTime === true
+      foreground: root.textColor
+      accent: root.accentColor
+      onToggled: if (root.service) root.service.setReaderShowsSentTime(!root.service.readerShowsSentTime)
+    }
+  }
+
+  Rectangle {
+    width: parent.width
     implicitHeight: Math.max(heavyText.implicitHeight, heavySwitch.implicitHeight)
       + Style.space(16)
     radius: Style.cornerRadius

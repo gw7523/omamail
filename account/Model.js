@@ -575,6 +575,7 @@ function windowPrefs(raw) {
       bodyZoom: 1,
       bodyMode: "reader",
       alwaysShowImages: false,
+      readerShowsSentTime: true,
       windowOpen: false
     }
   }
@@ -589,6 +590,7 @@ function windowPrefs(raw) {
     bodyZoom: clampZoom(parsed.bodyZoom),
     bodyMode: bodyMode,
     alwaysShowImages: parsed.alwaysShowImages === true,
+    readerShowsSentTime: parsed.readerShowsSentTime !== false,
     windowOpen: parsed.windowOpen === true
   }
 }
@@ -729,6 +731,7 @@ function detailSummary(previous, summary) {
     merged.date = previous.date
     merged.time = previous.time
     merged.fullTime = previous.fullTime
+    merged.sentTime = previous.sentTime
   }
   // A detail read is one message and knows nothing about the conversation it
   // belongs to, so its block reports a count of 0 — which means unknown, not
