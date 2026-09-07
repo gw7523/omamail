@@ -529,6 +529,33 @@ Item {
   // rather than on every keystroke, but it is also rebuilt by the write it
   // causes — so the value it hands back on the way out is routinely the one
   // already on disk, and a file round trip for it would be pure cost.
+  // The labels the open mailbox watches, and the switch for one of them.
+  readonly property var monitoredLabelIds: {
+    var entry = Accounts.find(accountList, activeAccountId)
+    return entry && Array.isArray(entry.monitored) ? entry.monitored : []
+  }
+
+  function toggleMonitored(labelId, accountId) {
+    var owner = labelOwner(accountId)
+    if (!owner) return
+    var next = Accounts.toggleMonitored(accountList, owner.accountId, labelId)
+    if (Accounts.serialize(next) === Accounts.serialize(accountList)) return
+    accountList = next
+    saveAccounts()
+    owner.labelActions.refreshMonitored()
+  }
+
+  // The watched ids an account's rename or move left behind, written to its
+  // entry: a watch follows the folder it named to that folder's new id.
+  function setMonitoredIds(index, ids) {
+    var account = accountAt(index)
+    if (!account) return
+    var next = Accounts.setMonitored(accountList, account.accountId, ids)
+    if (Accounts.serialize(next) === Accounts.serialize(accountList)) return
+    accountList = next
+    saveAccounts()
+  }
+
   function setAccountLabel(id, text) {
     var next = Accounts.setLabel(accountList, id, text)
     if (Accounts.serialize(next) === Accounts.serialize(accountList)) return
@@ -1372,6 +1399,61 @@ Item {
     }
     eachHost(function(host) { host.search(text) })
   }
+  readonly property bool canManageLabels: !!current && current.labelActions.canManageLabels
+
+  // A label change is dispatched to the account that owned the menu or
+  // dialog it was asked in, named by its id — not to whichever account is
+  // open when the answer arrives. A label id is a folder name on IMAP and
+  // two accounts can hold the same one, so the open account is no guide;
+  // and an account removed in the meantime gets nothing, with a word about
+  // it. No id at all means the open account, for a caller with no menu.
+  function labelOwner(accountId, mustBeReady) {
+    var id = String(accountId || "")
+    var owner = id === "" ? current : findAccount(id)
+    if (!owner) {
+      if (current) current.fail("That mailbox is no longer set up, so nothing was changed")
+      return null
+    }
+    if (mustBeReady === true && !owner.ready) {
+      owner.fail("That mailbox is signed out, so nothing was changed")
+      return null
+    }
+    return owner
+  }
+  function labelById(id, accountId) {
+    var owner = String(accountId || "") === "" ? current : findAccount(accountId)
+    return owner ? owner.labelActions.labelById(id) : null
+  }
+  function labelsOf(accountId) {
+    var owner = String(accountId || "") === "" ? current : findAccount(accountId)
+    return owner ? owner.labels : []
+  }
+  function createLabel(parentPath, leaf, accountId) {
+    var owner = labelOwner(accountId, true)
+    return owner ? owner.labelActions.createLabel(parentPath, leaf) : false
+  }
+  function renameLabel(id, leaf, accountId) {
+    var owner = labelOwner(accountId, true)
+    return owner ? owner.labelActions.renameLabel(id, leaf) : false
+  }
+  function moveLabel(id, parentPath, accountId) {
+    var owner = labelOwner(accountId, true)
+    return owner ? owner.labelActions.moveLabel(id, parentPath) : false
+  }
+  function deleteLabel(id, accountId) {
+    var owner = labelOwner(accountId, true)
+    return owner ? owner.labelActions.deleteLabel(id) : false
+  }
+
+  // An address search is built in one provider's words, so a merged list
+  // — several providers at once — is refused the way a move is.
+  function searchAddress(query, text) {
+    if (unified) {
+      fail("Searching by address needs one mailbox on screen")
+      return
+    }
+    if (current) current.search(text, query)
+  }
   // Labels belong to one service and one mailbox within it, so a unified view
   // draws none and this cannot be reached from one. `main`'s second argument
   // is kept: dropping it would have left #83's picker unable to say which
@@ -1770,6 +1852,8 @@ Item {
       mayAdoptLegacyToken: index === 0 && (!entry || entry.provider === "gmail")
       settings: root.settings
       bodyMode: root.bodyMode
+      // The labels this mailbox watches for new mail, off its own entry.
+      monitoredIds: entry ? entry.monitored : []
       // Every mailbox obeys the one answer: it is about what the reader is
       // willing to tell a sender, not about which account the mail came to.
       alwaysShowImages: root.alwaysShowImages
@@ -1786,6 +1870,7 @@ Item {
       onInboxUnreadChanged: root.recount()
       onReplySent: root.replySent()
       onReplyFailed: root.forwardReplyFailure(index)
+      onMonitoredMigrated: function(ids) { root.setMonitoredIds(index, ids) }
 
       // What a merged list is made of, and everything a merged list says
       // about itself. `recount` is not enough and is deliberately not used:
