@@ -1085,9 +1085,10 @@ awk '
 #    has to be in the tree or the card falls back to a placeholder. It gets a
 #    ceiling of its own instead of none: a card image that grew to a megabyte
 #    would still be a megabyte every user clones.
-# The fork carries the send queue and the Graph send path in the account
-# until they go upstream as components of their own: 160 KiB here, 128
-# upstream.
+# The fork carries every open pull request at once plus its own additions
+# (the Graph send path, the XOAUTH2 helpers, the inbox-on-switch rule), and
+# `App.qml` runs a few KiB past upstream's ceiling with all of them on:
+# 160 KiB here, 128 upstream, where each pull request fits on its own.
 limit=$((160 * 1024))
 preview_limit=$((384 * 1024))
 oversized=$(git ls-files -z \
