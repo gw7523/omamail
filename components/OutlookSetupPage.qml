@@ -89,6 +89,9 @@ Column {
     graphSwitch.checked = !!auth && String(auth.configuredSend || "") === "graph"
   }
 
+  // The auth object is rebuilt when the entry is saved, so the switches are
+  // read again from whichever one is current.
+  onAuthChanged: syncFromStore()
   Component.onCompleted: syncFromStore()
 
   Connections {
@@ -312,7 +315,7 @@ Column {
       TextField {
         width: parent.width
         readOnly: true
-        text: root.auth ? root.auth.userCode : ""
+        text: root.auth && root.auth.userCode !== undefined ? root.auth.userCode : ""
         foreground: root.textColor
         font.family: root.panelFontFamily
         font.pixelSize: Style.font.body
@@ -323,7 +326,7 @@ Column {
         color: root.textColor
         font.family: root.panelFontFamily
         font.pixelSize: Style.font.caption
-        tooltipText: root.auth ? root.auth.verificationUri : ""
+        tooltipText: root.auth && root.auth.verificationUri !== undefined ? root.auth.verificationUri : ""
         onActivated: Qt.openUrlExternally(tooltipText)
       }
     }
