@@ -76,6 +76,9 @@ DropArea {
   property string inReplyTo: ""
   property bool ccVisible: false
   property bool bccVisible: false
+  // Where answers should go when that is not the sender. Hidden like Bcc
+  // until asked for: most mail has no use for it.
+  property bool replyToVisible: false
   property string fromEmail: ""
   property var replyRecipients: []
   property bool fromWasChosen: false
@@ -102,6 +105,7 @@ DropArea {
   onInReplyToChanged: noteDraftChanged()
   onCcVisibleChanged: noteDraftChanged()
   onBccVisibleChanged: noteDraftChanged()
+  onReplyToVisibleChanged: noteDraftChanged()
   onFromEmailChanged: noteDraftChanged()
   onDraftAttachmentsChanged: noteDraftChanged()
   onForwardedAttachmentsChanged: noteDraftChanged()
@@ -161,6 +165,7 @@ DropArea {
     toField.text = ""
     ccField.text = ""
     bccField.text = ""
+    replyToField.text = ""
     subjectField.text = ""
     bodyEdit.text = ""
     placedBody = ""
@@ -174,6 +179,7 @@ DropArea {
     inReplyTo = ""
     ccVisible = false
     bccVisible = false
+    replyToVisible = false
     fromEmail = ""
     replyRecipients = []
     fromWasChosen = false
@@ -214,6 +220,7 @@ DropArea {
       to: toField.text,
       cc: ccField.text,
       bcc: bccField.text,
+      replyTo: replyToField.text,
       subject: subjectField.text,
       body: bodyEdit.text,
       placedBody: placedBody,
@@ -243,6 +250,7 @@ DropArea {
     inReplyTo = String(saved.inReplyTo || "")
     ccVisible = saved.ccVisible === true
     bccVisible = saved.bccVisible === true
+    replyToVisible = saved.replyToVisible === true || String(saved.replyTo || "") !== ""
     fromEmail = String(saved.fromEmail || "")
     replyRecipients = Array.isArray(saved.replyRecipients)
       ? saved.replyRecipients.slice() : []
@@ -256,6 +264,7 @@ DropArea {
     toField.text = String(saved.to || "")
     ccField.text = String(saved.cc || "")
     bccField.text = String(saved.bcc || "")
+    replyToField.text = String(saved.replyTo || "")
     subjectField.text = String(saved.subject || "")
     bodyEdit.text = String(saved.body || "")
     placedBody = String(saved.placedBody || "")
@@ -505,6 +514,8 @@ DropArea {
     ccVisible = ccField.text !== ""
     bccField.text = String(values.bcc || "")
     bccVisible = bccField.text !== ""
+    replyToField.text = String(values.replyTo || "")
+    replyToVisible = replyToField.text !== ""
     subjectField.text = String(values.subject || "")
     if (mode === "draft") {
       // Somebody wrote this and it was saved. None of it was placed, so all of
@@ -607,6 +618,7 @@ DropArea {
       to: String(draft.to || ""),
       cc: String(draft.cc || ""),
       bcc: String(draft.bcc || ""),
+      replyTo: String(draft.replyTo || ""),
       subject: String(draft.subject || ""),
       body: String(draft.body || ""),
       attachments: attachments,
@@ -714,6 +726,7 @@ DropArea {
       to: toField.text,
       cc: ccField.text,
       bcc: bccField.text,
+      replyTo: replyToField.text,
       subject: subjectField.text,
       body: bodyEdit.text,
       attachments: root.allOutgoingAttachments(),
@@ -1089,6 +1102,17 @@ DropArea {
           fontSize: Style.font.caption
           onClicked: root.bccVisible = !root.bccVisible
         }
+
+        Button {
+          id: replyToToggle
+          objectName: "compose-reply-to-toggle"
+          text: "Reply-To"
+          tooltipText: "Ask for answers at another address"
+          foreground: root.replyToVisible ? root.textColor : root.dimColor
+          bordered: false
+          fontSize: Style.font.caption
+          onClicked: root.replyToVisible = !root.replyToVisible
+        }
       }
 
       TextField {
@@ -1304,6 +1328,46 @@ DropArea {
         popupBorderColor: root.popupBorderColor
         panelFontFamily: root.panelFontFamily
         onChosen: function(contact) { root.acceptBcc(contact) }
+      }
+
+      PanelSeparator {
+        anchors.bottom: parent.bottom
+        width: parent.width
+        foreground: root.textColor
+      }
+    }
+
+    Item {
+      visible: root.replyToVisible
+      width: parent.width
+      implicitHeight: replyToField.implicitHeight + Style.space(14)
+
+      Text {
+        id: replyToLabel
+        anchors.left: parent.left
+        anchors.leftMargin: root.formInset
+        anchors.verticalCenter: parent.verticalCenter
+        width: root.formLabelWidth
+        horizontalAlignment: Text.AlignRight
+        text: "Reply-To"
+        color: root.dimColor
+        font.family: root.panelFontFamily
+        font.pixelSize: Style.font.caption
+      }
+
+      TextField {
+        id: replyToField
+        objectName: "compose-reply-to-field"
+        anchors.left: replyToLabel.right
+        anchors.leftMargin: root.formLabelGap
+        anchors.right: parent.right
+        anchors.rightMargin: Style.space(18)
+        anchors.verticalCenter: parent.verticalCenter
+        foreground: root.textColor
+        accent: root.accentColor
+        font.family: root.panelFontFamily
+        font.pixelSize: Style.font.bodySmall
+        onTextChanged: root.noteDraftChanged()
       }
 
       PanelSeparator {

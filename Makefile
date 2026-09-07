@@ -1,6 +1,6 @@
 QMLLINT := /usr/lib/qt6/bin/qmllint
 QML_FILES := Service.qml BarWidget.qml App.qml \
-	account/MailAccount.qml account/BatchAction.qml account/Rsvp.qml account/LabelActions.qml account/NewMailNotification.qml \
+	account/MailAccount.qml account/BatchAction.qml account/Rsvp.qml account/LabelActions.qml account/Unsubscribe.qml account/NewMailNotification.qml \
 	cache/CacheStore.qml cache/BodyCache.qml \
 	providers/AuthManager.qml providers/GmailApiClient.qml \
 	providers/OutlookAuth.qml \
@@ -77,6 +77,7 @@ test: test-js test-shell test-qml
 # they can be tested without a compositor. These run anywhere node does.
 test-js:
 	node tests/test_compose_recovery.js
+	node tests/test_signature.js
 	node tests/test_outbox.js
 	node tests/test_recipients.js
 	node tests/test_senders.js
