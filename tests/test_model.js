@@ -1265,3 +1265,11 @@ assert.strictEqual(model.monitoredNote([{ name: "Receipts", delta: 3 }]), "3 new
 assert.strictEqual(model.monitoredNote([{ name: "A", delta: 1 }, { name: "B", delta: 4 }, { name: "C", delta: 2 }]),
   "4 new in B, 2 new in C and 1 more")
 assert.strictEqual(model.monitoredNote([]), "")
+
+// ------------------------------------------------------------ activity strip
+
+assert.strictEqual(model.activityStatus({}), "", "nothing in flight says nothing")
+assert.strictEqual(model.activityStatus({ sending: 1 }), "Sending")
+assert.strictEqual(model.activityStatus({ sending: 2, queuedSends: 3 }), "Sending 2 \u00b7 3 queued to send")
+assert.strictEqual(model.activityStatus({ running: 1, waiting: 4 }), "1 action running \u00b7 4 waiting")
+assert.strictEqual(model.activityStatus({ sending: "x", waiting: -2 }), "", "nonsense counts are zero")
