@@ -2023,6 +2023,14 @@ Item {
     return true
   }
 
+  // The batch — several ticked rows at once — lives in `BatchAction.qml`.
+  function actMany(ids, action) { return batchAction.run(ids, action) }
+
+  BatchAction {
+    id: batchAction
+    account: root
+  }
+
   // ---------------------------------------------------------------- reply
 
   // Loads the original bytes before a forward can claim it includes them.
@@ -2356,85 +2364,13 @@ Item {
 
   // ------------------------------------------------------------------ RSVP
 
-  // Answering an invitation is sending a mail, which is the whole reason this
-  // needs no calendar API, no second OAuth scope, and works the same on IMAP
-  // as on Gmail: an RFC 5546 REPLY addressed to the organiser is what every
-  // calendar server is already listening for.
-  //
-  // Not routed through `send`: that one is the compose window's, and finishing
-  // emits `replySent`, which closes it. This finishes with a card that has
-  // changed its mind.
-  function rsvp(response) {
-    if (!ready || rsvpSending || !canRespondToInvite) return
-    var answer = String(response || "")
-    // The alias the invitation was addressed to, not the account's primary
-    // address: the ATTENDEE line has to name the person who was invited.
-    var answeringAs = receivedAsAddress
-    var answeringName = receivedAsName
-    var fields = Calendar.replyFields(selectedInvite,
-      ({ email: answeringAs, name: answeringName }), answer)
-    if (!fields) {
-      fail("This invitation names no organiser to answer")
-      return
-    }
+  // See `Rsvp.qml`: the account file is at its size ceiling.
+  function rsvp(response) { rsvpAction.run(response) }
+  readonly property alias bodies: bodyCache
 
-    // The message the answer belongs to, held so a reply that lands after the
-    // reader has moved on does not mark a different message answered.
-    var messageId = selectedId
-    var invited = selectedInvite
-    var summary = selectedMessage
-    rsvpSending = true
-    clearNotice()
-
-    api.sendMessage(Mail.buildSendPayload({
-      // The ATTENDEE line claims this address; the envelope has to agree, or a
-      // strict organiser drops the reply as somebody answering for a third
-      // party. Gmail fills a From in for itself, and the IMAP client puts the
-      // account on the envelope rather than in the headers — so neither of
-      // them would have written this one.
-      from: answeringAs,
-      fromName: answeringName,
-      accountAddress: ownAddress,
-      to: fields.to,
-      subject: fields.subject,
-      body: fields.body,
-      calendar: fields.calendar,
-      // Threaded with the invitation it answers, the way a calendar's own
-      // reply is. An answer that starts a conversation of its own is one the
-      // organiser reads as a second, unrelated mail.
-      inReplyTo: summary ? summary.messageId : "",
-      threadId: summary ? summary.threadId : ""
-    }), function(payload, error) {
-      root.rsvpSending = false
-      if (error) {
-        root.fail(error)
-        return
-      }
-      root.note("Answer sent to " + fields.to)
-      if (root.selectedId !== messageId) return
-      root.rememberResponse(messageId, invited, answeringAs, answer)
-    })
-  }
-
-  // The answer, written back into the copy of the invitation on disk.
-  //
-  // The `text/calendar` part is the organiser's document and this does not
-  // rewrite it — but a message reopened tomorrow reading its own file would
-  // otherwise show its buttons unanswered, after the answer had been sent and
-  // had worked. Everything else in the row is what is already on screen, which
-  // is what was cached a moment ago.
-  function rememberResponse(messageId, invited, answeringAs, answer) {
-    var updated = Calendar.withResponse(invited, answeringAs, answer)
-    selectedInvite = updated
-    bodyCache.put(messageId, ({
-      text: selectedBody.text,
-      source: selectedBody.source,
-      html: sourceHtml,
-      attachments: selectedAttachments,
-      images: selectedImages,
-      invite: updated,
-      unsubscribe: selectedUnsubscribe
-    }))
+  Rsvp {
+    id: rsvpAction
+    account: root
   }
 
   // ----------------------------------------------------------- unsubscribe
@@ -2880,13 +2816,19 @@ Item {
 
   // The client takes the manager as a required property, so it cannot be built
   // until there is one.
+  // A test's stand-in for the provider: a component the loader prefers when
+  // set, so the account can be driven against a controlled client without a
+  // server or a credential. Never set outside a test.
+  property Component clientOverride: null
+
   Loader {
     id: apiLoader
     active: !!authLoader.item
-    sourceComponent: root.providerId === "imap" || root.providerId === "outlook"
-      ? imapClientComponent
-      : (root.providerId === "jmap" ? jmapClientComponent
-        : (root.providerId === "hey" ? heyClientComponent : gmailClientComponent))
+    sourceComponent: root.clientOverride ? root.clientOverride
+      : (root.providerId === "imap" || root.providerId === "outlook"
+        ? imapClientComponent
+        : (root.providerId === "jmap" ? jmapClientComponent
+          : (root.providerId === "hey" ? heyClientComponent : gmailClientComponent)))
   }
 
   Component {

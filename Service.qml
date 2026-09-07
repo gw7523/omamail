@@ -1322,6 +1322,16 @@ Item {
     }
     eachHost(function(host) { host.markAllRead() })
   }
+  // Several ticked rows at once. A merged list draws rows from several
+  // mailboxes, and a batch is one mailbox's request, so it is refused there
+  // the way a move is: the rule every unavailable action follows.
+  function actMany(ids, action) {
+    if (unified) {
+      fail("Acting on several messages needs one mailbox on screen")
+      return false
+    }
+    return current ? current.actMany(ids, action) : false
+  }
   // The mailbox the From address belongs to, which compose already names:
   // `sendIdentities` spans every account and carries the id, so a unified
   // view needed the routing rather than a new question.

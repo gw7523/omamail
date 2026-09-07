@@ -757,13 +757,15 @@ awk '
 test "$(grep -c 'root.active && root.cacheKey !== actionQuery' account/MailAccount.qml)" -ge 2 \
   || fail "successful actions must revalidate a mailbox opened while they were pending"
 awk '
-  /function markAllRead\(\)/ { in_mark_all = 1 }
-  in_mark_all && /if \(interrupted\)/ { saw_interrupt = 1 }
-  in_mark_all && /root\.loadMessages\(false, true, error\)/ { saw_retry = 1 }
-  in_mark_all && /^  }/ { exit !(saw_interrupt && saw_retry) }
+  /function run\(/ { in_bulk = 1 }
+  in_bulk && /if \(interrupted\)/ { saw_interrupt = 1 }
+  in_bulk && /account\.loadMessages\(false, true, error\)/ { saw_retry = 1 }
+  in_bulk && /^  }/ { exit !(saw_interrupt && saw_retry) }
   END { exit !(saw_interrupt && saw_retry) }
-' account/MailAccount.qml \
-  || fail "mark-all must stop and revalidate a live list too"
+' account/BatchAction.qml \
+  || fail "a bulk action must stop and revalidate a live list too"
+grep -q 'return batchAction.run(ids, action)' account/MailAccount.qml \
+  || fail "the account must hand its batch to BatchAction"
 grep -q 'root\.loadMessages(false, true, error)' account/MailAccount.qml \
   || fail "a failed action must resume the list without losing its error"
 grep -q 'root\.loadMessages(false, true, "")' account/MailAccount.qml \
