@@ -765,6 +765,16 @@ function messageDate(message) {
   return null
 }
 
+// When the sender's client says it sent the message: the Date header alone,
+// which is the one reading `messageDate` puts second. The two differ by the
+// time the mail spent in transit, and by a wrong clock at either end.
+function sentHeaderDate(message) {
+  var header = headerValue(message, "Date")
+  if (!header) return null
+  var parsed = new Date(header)
+  return isNaN(parsed.getTime()) ? null : parsed
+}
+
 function pad(value) {
   return (value < 10 ? "0" : "") + value
 }
@@ -875,6 +885,7 @@ function summarize(message, now) {
     date: date,
     time: relativeTime(date, now),
     fullTime: fullTime(date),
+    sentTime: fullTime(sentHeaderDate(message)),
     thread: thread,
     // The conversation's, not only the representative's. A thread whose unread
     // reply is not the message the server returned for this view is still an
