@@ -373,8 +373,10 @@ Item {
 
   function refreshWithToken(refreshToken, context) {
     refreshBusy = true
+    // The mail scopes alone: a token is for one resource, and Microsoft
+    // refuses a refresh that names two. The Graph exchange asks for its own.
     postForm(Microsoft.tokenUrlFor(tenant),
-      Microsoft.refreshTokenBody(clientId, refreshToken, scopes),
+      Microsoft.refreshTokenBody(clientId, refreshToken, Microsoft.SCOPES),
       function(status, text) {
         if (!root.isCurrent(context) || !root.sessionEnabled) return
         var result = Microsoft.parseTokenResponse(status, text, refreshToken)
