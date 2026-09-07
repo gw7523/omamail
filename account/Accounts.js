@@ -120,7 +120,9 @@ function makeImapSettings(raw) {
     // Sending through Microsoft Graph, with the token account of Graph's own
     // audience, for a tenant that has authenticated SMTP switched off.
     send: trimmed(values.send).toLowerCase() === "graph" ? "graph" : "",
-    graphTokenAccount: trimmed(values.graphTokenAccount)
+    graphTokenAccount: trimmed(values.graphTokenAccount),
+    // An Outlook mailbox's tenant, one path segment of Microsoft's sign-in URL.
+    tenant: trimmed(values.tenant)
   }
 }
 

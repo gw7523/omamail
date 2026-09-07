@@ -18,6 +18,39 @@ deepEqual(outlook.settings("jane@hotmail.com"), {
   graphTokenAccount: "",
   insecure: false
 })
+
+// A work or school mailbox submits through Microsoft 365's own SMTP host and
+// may be told to send through Graph instead; a personal one is unchanged.
+const work = outlook.settings("jane@contoso.com", "organizations", "graph")
+assert.strictEqual(work.smtpHost, "smtp.office365.com")
+assert.strictEqual(work.imapHost, "outlook.office365.com")
+assert.strictEqual(work.send, "graph")
+assert.strictEqual(outlook.settings("jane@hotmail.com", "", "smtp").send, "", "anything but graph is SMTP")
+
+// The tenant is one path segment of Microsoft's URL and nothing else: a
+// stored value cannot steer the sign-in to another host.
+assert.strictEqual(microsoft.normalizeTenant(""), "consumers")
+assert.strictEqual(microsoft.normalizeTenant(" Organizations "), "organizations")
+assert.strictEqual(microsoft.normalizeTenant("contoso.onmicrosoft.com"), "contoso.onmicrosoft.com")
+assert.strictEqual(microsoft.normalizeTenant("12345678-1234-4abc-9def-1234567890ab"), "12345678-1234-4abc-9def-1234567890ab")
+assert.strictEqual(microsoft.normalizeTenant("evil.example/../consumers"), "consumers", "a path is not a tenant")
+assert.strictEqual(microsoft.normalizeTenant("a..b"), "consumers")
+assert.strictEqual(microsoft.normalizeTenant("login.microsoftonline.com?x"), "consumers")
+assert.strictEqual(microsoft.tokenUrlFor("organizations"),
+  "https://login.microsoftonline.com/organizations/oauth2/v2.0/token")
+assert.strictEqual(microsoft.deviceUrlFor("bad tenant"), microsoft.DEVICE_URL,
+  "an unusable tenant falls back to the consumer authority")
+assert.strictEqual(microsoft.isWorkTenant("consumers"), false)
+assert.strictEqual(microsoft.isWorkTenant("organizations"), true)
+
+// Graph's token is asked for with the same refresh token and Graph's scope.
+const graphBody = microsoft.graphRefreshBody(clientId, "refresh-secret")
+assert.ok(graphBody.indexOf("grant_type=refresh_token") >= 0)
+assert.ok(graphBody.indexOf("Mail.Send") >= 0)
+assert.ok(graphBody.indexOf("IMAP.AccessAsUser.All") < 0, "one resource per token")
+assert.strictEqual(microsoft.missingGraphScope("https://graph.microsoft.com/Mail.Send"), false)
+assert.strictEqual(microsoft.missingGraphScope("https://graph.microsoft.com/User.Read"), true)
+assert.ok(microsoft.graphScopeMessage().indexOf("Mail.Send") >= 0)
 assert.strictEqual(microsoft.isValidClientId(clientId), true)
 assert.strictEqual(microsoft.isValidClientId("not-a-guid"), false)
 assert.strictEqual(microsoft.isValidClientId(""), false)
