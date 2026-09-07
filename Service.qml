@@ -905,6 +905,9 @@ Item {
   // not be asked to make again on the next one; the switch that turns it on is
   // in Settings, which is also the only place that can turn it back off.
   property bool alwaysShowImages: false
+  // The reader names the time the sender's client says it sent the message,
+  // beside the time it arrived. On by default; Settings turns it off.
+  property bool readerShowsSentTime: true
   property bool windowPrefsLoaded: false
   property string windowWritePayload: ""
   property bool restoreWindow: false
@@ -919,6 +922,7 @@ Item {
     bodyZoom = prefs.bodyZoom
     bodyMode = prefs.bodyMode
     alwaysShowImages = prefs.alwaysShowImages
+    readerShowsSentTime = prefs.readerShowsSentTime
     restoreWindow = prefs.windowOpen
     restoreAttempts = 0
     windowPrefsLoaded = true
@@ -958,6 +962,7 @@ Item {
       bodyZoom: bodyZoom,
       bodyMode: bodyMode,
       alwaysShowImages: alwaysShowImages,
+      readerShowsSentTime: readerShowsSentTime,
       windowOpen: windowOpen || restoreWindow
     })
     windowWriter.command = [pluginDir + "/scripts/config-store.sh", "window.json"]
@@ -1018,6 +1023,12 @@ Item {
     // The message on screen is the one the answer was given about, so it
     // answers now rather than at the next message.
     if (next && current) current.showRemoteImages()
+  }
+  function setReaderShowsSentTime(value) {
+    var next = value === true
+    if (next === readerShowsSentTime) return
+    readerShowsSentTime = next
+    saveWindowPrefs()
   }
   signal duplicateAccount(string email)
 

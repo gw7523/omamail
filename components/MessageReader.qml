@@ -392,6 +392,24 @@ Item {
           }
         }
       }
+
+      // When the sender's client says it sent it, beside the arrival time the
+      // line above carries; the two differ by the transit, or by a clock that
+      // is wrong at one end. Settings can turn it off.
+      Text {
+        id: sentLine
+        objectName: "reader-sent-line"
+        width: parent.width
+        visible: !!root.service && root.service.readerShowsSentTime === true
+          && !!root.summary && String(root.summary.sentTime || "") !== ""
+        textFormat: Text.PlainText
+        text: root.summary ? "sent " + String(root.summary.sentTime || "") : ""
+        color: root.dimColor
+        font.family: root.panelFontFamily
+        font.pixelSize: Style.font.caption
+        elide: Text.ElideRight
+        horizontalAlignment: root.headerAlignment
+      }
     }
   }
 

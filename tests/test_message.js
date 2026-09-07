@@ -955,6 +955,10 @@ assert.strictEqual(message.extractHtml({
   assert.strictEqual(
     message.messageDate({ payload: { headers: [{ name: "Date", value: stamped }] } }).getTime(), clock,
     "this file's own reader gets the instant back out of it")
+assert.strictEqual(
+  message.sentHeaderDate({ internalDate: 5, payload: { headers: [{ name: "Date", value: stamped }] } }).getTime(), clock,
+  "the sent time is the Date header even when the server stamped the arrival")
+assert.strictEqual(message.sentHeaderDate({ internalDate: 5 }), null, "no Date header, no sent time")
 
   // Stated by the caller, the way the id and the boundary already are.
   assert.ok(message.buildRawMessage({
