@@ -23,9 +23,17 @@ Item {
   property string configuredClientId: ""
   readonly property string clientId: Microsoft.effectiveClientId(configuredClientId)
   property string configuredEmail: ""
+  // The account entry's server settings. Outlook's servers are fixed by
+  // `Outlook.settings` whatever these say; only two readings are taken from
+  // them — the tenant the sign-in is addressed to, which `normalizeTenant`
+  // keeps to one path segment of Microsoft's own URL, and whether the mailbox
+  // sends through Graph, a mode with one fixed address of its own.
+  property var entrySettings: null
+  readonly property string tenant: Microsoft.normalizeTenant(entrySettings ? entrySettings.tenant : "")
+  readonly property string configuredSend: entrySettings ? String(entrySettings.send || "") : ""
   // Microsoft grants this token for its own mail service. Persisted generic
   // IMAP settings must never select its destination or disable transport TLS.
-  readonly property var settings: Outlook.settings(configuredEmail)
+  readonly property var settings: Outlook.settings(configuredEmail, tenant, configuredSend)
   property var scopes: Microsoft.SCOPES
 
   readonly property string authMode: "oauth2"
@@ -97,6 +105,108 @@ Item {
     accessToken = ""
     accessTokenExpiresAt = 0
     loggedIn = false
+    graphAccessToken = ""
+    graphAccessTokenExpiresAt = 0
+  }
+
+  // ------------------------------------------------------------- Graph
+
+  // A token of Graph's audience, for a tenant that sends through Graph. The
+  // refresh token in the keyring is exchanged for it the same way the mail
+  // token is refreshed, with Graph's scope in place of IMAP's; nothing new is
+  // signed in to, and a rotated refresh token is stored back as before.
+  property string graphAccessToken: ""
+  property double graphAccessTokenExpiresAt: 0
+  property var graphWaiters: []
+  property var graphLookupProcess: null
+  property bool graphQueued: false
+
+  function graphTokenIsFresh() {
+    return graphAccessToken !== "" && Date.now() < graphAccessTokenExpiresAt - 60000
+  }
+
+  function finishGraphWaiters(token, error) {
+    var waiting = graphWaiters
+    graphWaiters = []
+    for (var i = 0; i < waiting.length; i++) {
+      waiting[i](sessionEnabled ? token : "", sessionEnabled ? error : "Signed out")
+    }
+  }
+
+  function withGraphToken(callback) {
+    if (typeof callback !== "function") return
+    if (!sessionEnabled) {
+      callback("", "Signed out")
+      return
+    }
+    if (graphTokenIsFresh()) {
+      callback(graphAccessToken, "")
+      return
+    }
+    if (!credentialsPresent) {
+      callback("", "Add this Outlook mailbox and its OAuth client first")
+      return
+    }
+    var next = graphWaiters.slice()
+    next.push(callback)
+    graphWaiters = next
+    if (graphLookupProcess || loginBusy) return
+    startGraphLookup()
+  }
+
+  function startGraphLookup() {
+    if (graphLookupProcess || graphWaiters.length === 0) return
+    if (keyringJob || keyringJobs.length > 0) {
+      graphQueued = true
+      return
+    }
+    graphQueued = false
+    var context = sessionContext()
+    var attributes = Credentials.outlookKeyringAttributes(clientId, accountId)
+    if (attributes.length === 0) {
+      handleGraphLookup("", context)
+      return
+    }
+    var process = lookupComponent.createObject(root, {
+      context: context,
+      purpose: "graph",
+      command: ["secret-tool", "lookup"].concat(attributes)
+    })
+    if (!process) {
+      handleGraphLookup("", context)
+      return
+    }
+    graphLookupProcess = process
+    process.running = true
+  }
+
+  function handleGraphLookup(raw, context) {
+    if (!isCurrent(context) || !sessionEnabled) return
+    var refreshToken = String(raw || "")
+    if (refreshToken === "") {
+      finishGraphWaiters("", "Sign in to Outlook first")
+      return
+    }
+    postForm(Microsoft.tokenUrlFor(tenant),
+      Microsoft.graphRefreshBody(clientId, refreshToken),
+      function(status, text) {
+        if (!root.isCurrent(context) || !root.sessionEnabled) return
+        var result = Microsoft.parseTokenResponse(status, text, refreshToken)
+        refreshToken = ""
+        if (!result.ok) {
+          root.finishGraphWaiters("", root.safeError(result.invalidGrant
+            ? Microsoft.graphScopeMessage() : result.error))
+          return
+        }
+        if (Microsoft.missingGraphScope(result.scope)) {
+          root.finishGraphWaiters("", Microsoft.graphScopeMessage())
+          return
+        }
+        root.graphAccessToken = result.accessToken
+        root.graphAccessTokenExpiresAt = Date.now() + result.expiresIn * 1000
+        if (result.refreshToken) root.storeRefreshToken(result.refreshToken)
+        root.finishGraphWaiters(root.graphAccessToken, "")
+      })
   }
 
   function invalidateAccessToken() {
@@ -217,6 +327,7 @@ Item {
     if (keyringJob) return
     if (keyringJobs.length === 0) {
       if (restoreQueued) Qt.callLater(root.restoreSession)
+      if (graphQueued) Qt.callLater(root.startGraphLookup)
       return
     }
     var next = keyringJobs.slice()
@@ -262,7 +373,7 @@ Item {
 
   function refreshWithToken(refreshToken, context) {
     refreshBusy = true
-    postForm(Microsoft.TOKEN_URL,
+    postForm(Microsoft.tokenUrlFor(tenant),
       Microsoft.refreshTokenBody(clientId, refreshToken, scopes),
       function(status, text) {
         if (!root.isCurrent(context) || !root.sessionEnabled) return
@@ -322,7 +433,7 @@ Item {
     var context = sessionContext()
     lastError = ""
     loginBusy = true
-    postForm(Microsoft.DEVICE_URL,
+    postForm(Microsoft.deviceUrlFor(tenant),
       Microsoft.deviceAuthorizationBody(clientId, scopes),
       function(status, text) {
         if (!root.isCurrent(context)) return
@@ -349,7 +460,7 @@ Item {
       return
     }
     var context = sessionContext()
-    postForm(Microsoft.TOKEN_URL,
+    postForm(Microsoft.tokenUrlFor(tenant),
       Microsoft.deviceTokenBody(clientId, deviceCode),
       function(status, text) {
         if (!root.isCurrent(context)) return
@@ -450,6 +561,7 @@ Item {
     sessionChecked = true
     lastError = ""
     finishWaiters("", "Signed out")
+    finishGraphWaiters("", "Signed out")
     clearStoredToken()
     loggedOut()
   }
@@ -518,12 +630,16 @@ Item {
     Process {
       id: lookup
       required property var context
+      // "session" restores the mail token; "graph" asks for Graph's.
+      property string purpose: "session"
       stdout: StdioCollector { waitForEnd: true }
       stderr: StdioCollector { waitForEnd: true }
       onExited: function(exitCode) {
         if (root.lookupProcess === lookup) root.lookupProcess = null
+        if (root.graphLookupProcess === lookup) root.graphLookupProcess = null
         var value = exitCode === 0 ? Secrets.fromKeyring(stdout.text) : ""
-        root.handleSecretLookup(value, context)
+        if (purpose === "graph") root.handleGraphLookup(value, context)
+        else root.handleSecretLookup(value, context)
         destroy()
       }
     }

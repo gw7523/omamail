@@ -85,6 +85,7 @@ case "$mode" in
   imap-id-oauth) [ $# -ge 7 ] || fail 'mail-transport.sh: imap-id-oauth needs two URLs, a username, a bearer token, a preamble and a command' ;;
   imap-append-oauth) [ $# -eq 6 ] || fail 'mail-transport.sh: imap-append-oauth needs a URL, a username, a bearer token, a message and flags' ;;
   smtp-oauth) [ $# -ge 7 ] || fail 'mail-transport.sh: smtp-oauth needs a URL, a username, a bearer token, a sender, a message and a recipient' ;;
+  graph-send) [ $# -eq 4 ] || fail 'mail-transport.sh: graph-send needs a url, a token and a message' ;;
 esac
 # Validate ALL config fields before curl can see even the first command. Only
 # message bodies bypass this check: they are uploaded as files, never config.
@@ -154,10 +155,10 @@ esac
 # stops a hand-edited accounts.json from pointing an authenticated client at
 # file:// or at an ordinary web server.
 case "$url" in
-  imaps://*|imap://*|smtps://*|smtp://*) ;;
   # Graph has one address, fixed here rather than taken from the caller, so
-  # a bearer token can only ever be offered to Microsoft's endpoint.
+  # a hand-edited accounts.json cannot point a bearer token at another host.
   https://graph.microsoft.com/v1.0/me/sendMail) [ "$mode" = "graph-send" ] || fail 'mail-transport.sh: refusing a URL that is not imap(s) or smtp(s)' ;;
+  imaps://*|imap://*|smtps://*|smtp://*) [ "$mode" != "graph-send" ] || fail 'mail-transport.sh: graph-send goes to Graph alone' ;;
   *) fail 'mail-transport.sh: refusing a URL that is not imap(s) or smtp(s)' ;;
 esac
 
@@ -368,7 +369,7 @@ while :; do
 done
 
 # Graph answers with a status, not with a curl error: 202 is sent, anything
-# else is the body's own explanation.
+# else is the body's own explanation, and no status line at all is a failure.
 if [ "$mode" = "graph-send" ] && [ "$status" -eq 0 ]; then
   http=$(sed -n 's/^HTTP\/[0-9.]* \([0-9]*\).*/\1/p' "$work/headers" 2>/dev/null | tail -1)
   case "$http" in

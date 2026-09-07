@@ -2909,6 +2909,7 @@ Item {
       accountId: root.accountId
       configuredClientId: root.oauthClientId
       configuredEmail: root.configuredEmail
+      entrySettings: root.imapSettings
 
       onLoginSucceeded: {
         root.lastError = lastError

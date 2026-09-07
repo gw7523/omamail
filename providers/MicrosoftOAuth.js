@@ -17,6 +17,47 @@ var SCOPES = [
   "https://outlook.office.com/SMTP.Send"
 ]
 
+// Sending through Microsoft Graph, for a work or school tenant that has
+// switched authenticated SMTP off. A token is for one resource, so this is a
+// second token — asked for with the same refresh token, which Microsoft lets
+// a public client exchange for any resource the registration was consented
+// for.
+var GRAPH_SCOPES = ["https://graph.microsoft.com/Mail.Send"]
+
+// The tenant the sign-in is addressed to. Personal accounts live under
+// `consumers`; a Microsoft 365 mailbox lives under its own tenant, which
+// `organizations` finds from the address, or a tenant id or domain names
+// outright. Anything that is not one of those spellings is the consumer
+// tenant, so a stored value cannot steer the sign-in to another host: the
+// tenant is one path segment of a fixed URL, never a URL of its own.
+function normalizeTenant(value) {
+  var text = trimmed(value).toLowerCase()
+  if (text === "" || text === "consumers") return "consumers"
+  if (text === "organizations" || text === "common") return text
+  if (/^[a-z0-9][a-z0-9.-]{0,254}$/.test(text) && text.indexOf("..") < 0) return text
+  return "consumers"
+}
+
+function isWorkTenant(tenant) {
+  return normalizeTenant(tenant) !== "consumers"
+}
+
+function authorityFor(tenant) {
+  return "https://login.microsoftonline.com/" + normalizeTenant(tenant) + "/oauth2/v2.0"
+}
+
+// The consumer tenant answers with the constants above, which is what lets a
+// test point them at a server of its own.
+function deviceUrlFor(tenant) {
+  if (normalizeTenant(tenant) === "consumers") return DEVICE_URL
+  return authorityFor(tenant) + "/devicecode"
+}
+
+function tokenUrlFor(tenant) {
+  if (normalizeTenant(tenant) === "consumers") return TOKEN_URL
+  return authorityFor(tenant) + "/token"
+}
+
 // A maintainer-owned public-client registration can make Outlook a one-click
 // setup later. Until then, each user supplies the Application (client) ID of
 // their own registration, just as Gmail users supply their own OAuth client.
@@ -70,6 +111,21 @@ function refreshTokenBody(clientId, refreshToken, scopes) {
     refresh_token: String(refreshToken || ""),
     scope: scopeText(scopes)
   })
+}
+
+function graphRefreshBody(clientId, refreshToken) {
+  return refreshTokenBody(clientId, refreshToken, GRAPH_SCOPES)
+}
+
+// Whether a Graph token answered with the one scope sending needs.
+function missingGraphScope(granted) {
+  var have = String(granted || "").toLowerCase().split(/\s+/)
+  return have.indexOf(GRAPH_SCOPES[0].toLowerCase()) < 0
+}
+
+function graphScopeMessage() {
+  return "Microsoft did not grant the Mail.Send permission for Microsoft Graph. "
+    + "Add it to the app registration, then sign in again"
 }
 
 function parseJson(text) {

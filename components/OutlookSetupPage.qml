@@ -52,12 +52,16 @@ Column {
     if (address === "") return null
     var clientId = validatedClientId()
     if (clientId === "") return null
+    var tenant = workSwitch.checked ? "organizations" : ""
+    var send = workSwitch.checked && graphSwitch.checked ? "graph" : ""
+    var imap = Outlook.settings(address, tenant, send)
+    imap.tenant = tenant
     return ({
       provider: "outlook",
       email: address,
       clientId: clientId,
       clientSecret: "",
-      imap: Outlook.settings(address)
+      imap: imap
     })
   }
 
@@ -81,6 +85,8 @@ Column {
     addressField.text = String(service.accountAddress || "")
     if (auth && auth.configuredClientId)
       clientIdField.text = String(auth.configuredClientId)
+    workSwitch.checked = !!auth && Microsoft.isWorkTenant(auth.tenant)
+    graphSwitch.checked = !!auth && String(auth.configuredSend || "") === "graph"
   }
 
   Component.onCompleted: syncFromStore()
@@ -140,7 +146,7 @@ Column {
       foreground: root.textColor
       font.family: root.panelFontFamily
       font.pixelSize: Style.font.bodySmall
-      placeholderText: "Outlook or Hotmail address"
+      placeholderText: "Outlook, Hotmail or Microsoft 365 address"
       onAccepted: if (!root.usingBuiltinClient) clientIdField.forceActiveFocus()
     }
 
@@ -154,6 +160,56 @@ Column {
       font.pixelSize: Style.font.bodySmall
       placeholderText: "Microsoft Application (client) ID"
       onAccepted: root.signIn()
+    }
+
+    // A work or school mailbox lives in its own tenant rather than the
+    // consumer one, and submits through Microsoft 365's SMTP host — or, where
+    // the tenant has switched authenticated SMTP off, through Graph.
+    Row {
+      width: parent.width
+      spacing: Style.space(10)
+
+      ToggleSwitch {
+        id: workSwitch
+        objectName: "outlook-work-switch"
+        anchors.verticalCenter: parent.verticalCenter
+        foreground: root.textColor
+        accent: root.accentColor
+        onToggled: checked = !checked
+      }
+
+      Text {
+        anchors.verticalCenter: parent.verticalCenter
+        text: "Work or school account (Microsoft 365)"
+        color: root.textColor
+        font.family: root.panelFontFamily
+        font.pixelSize: Style.font.bodySmall
+      }
+    }
+
+    Row {
+      width: parent.width
+      spacing: Style.space(10)
+      visible: workSwitch.checked
+
+      ToggleSwitch {
+        id: graphSwitch
+        objectName: "outlook-graph-switch"
+        anchors.verticalCenter: parent.verticalCenter
+        foreground: root.textColor
+        accent: root.accentColor
+        onToggled: checked = !checked
+      }
+
+      Text {
+        anchors.verticalCenter: parent.verticalCenter
+        text: "Send through Microsoft Graph (the tenant has SMTP switched off)"
+        color: root.textColor
+        font.family: root.panelFontFamily
+        font.pixelSize: Style.font.bodySmall
+        wrapMode: Text.WordWrap
+        width: parent.width - graphSwitch.width - Style.space(10)
+      }
     }
 
     Text {
