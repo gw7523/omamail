@@ -573,12 +573,34 @@ function clampZoom(value) {
     Math.round(zoom * ZOOM_STEPS_PER_UNIT) / ZOOM_STEPS_PER_UNIT))
 }
 
+// A dragged pane width as stored: a whole number of pixels, or 0 for "never
+// dragged". Anything else — a string, a negative, NaN from an old file — is 0,
+// so a bad value costs a default rather than a pane of no width.
+function paneWidth(value) {
+  var n = Math.floor(Number(value))
+  if (!isFinite(n) || n <= 0) return 0
+  return Math.min(n, 4000)
+}
+
+function stringList(value) {
+  var list = Array.isArray(value) ? value : []
+  var out = []
+  for (var i = 0; i < list.length; i++) {
+    var item = String(list[i] === undefined || list[i] === null ? "" : list[i])
+    if (item !== "" && out.indexOf(item) < 0) out.push(item)
+  }
+  return out
+}
+
 function windowPrefs(raw) {
   var parsed = null
   try { parsed = JSON.parse(String(raw || "")) } catch (e) { parsed = null }
   if (!parsed || typeof parsed !== "object") {
     return {
       sidebarCollapsed: false,
+      sidebarWidth: 0,
+      listWidth: 0,
+      collapsedFolders: [],
       bodyZoom: 1,
       bodyMode: "reader",
       alwaysShowImages: false,
@@ -590,6 +612,9 @@ function windowPrefs(raw) {
     bodyMode = parsed.plainTextForced === true ? "plain" : "reader"
   return {
     sidebarCollapsed: parsed.sidebarCollapsed === true,
+    sidebarWidth: paneWidth(parsed.sidebarWidth),
+    listWidth: paneWidth(parsed.listWidth),
+    collapsedFolders: stringList(parsed.collapsedFolders),
     bodyZoom: clampZoom(parsed.bodyZoom),
     bodyMode: bodyMode,
     alwaysShowImages: parsed.alwaysShowImages === true,
@@ -767,10 +792,10 @@ function messageById(primary, fallback, id) {
 }
 
 // The rail as one numbered list, in the order it is drawn: the provider's
-// mailboxes first, then the user's labels or folders as `railLabels` orders
-// them. Both the sidebar's badges and the keys that jump read this, so the
-// number beside a row and the row a number opens cannot disagree — describing
-// the order twice is how they would.
+// mailboxes first, then the user's labels or folders in the order the rail
+// draws them (`visibleLabels`, the tree). Both the sidebar's badges and the
+// keys that jump read this, so the number beside a row and the row a number
+// opens cannot disagree — describing the order twice is how they would.
 //
 // Ten because the keys are digits. Past that a row simply has no number: a
 // mailbox nobody can reach by keyboard is honest, and renumbering the rail
@@ -784,8 +809,15 @@ function sidebarSlots(mailboxes, labels, limit) {
     out.push({ kind: "mailbox", key: String(boxes[i].key), name: String(boxes[i].label || ""),
       icon: String(boxes[i].icon || "mail") })
   }
-  var all = railLabels(labels)
+  // The labels in the order given, which is the order the rail draws them:
+  // App hands over `visibleLabels`, the tree with its folded rows left out,
+  // where a child follows its parent whatever the alphabet says. Sorting
+  // here again would number "Work (old)" before "Work/Invoices" while the
+  // rail draws them the other way round, and the digit beside a row would
+  // open a different one. System labels are not rows and get no number.
+  var all = Array.isArray(labels) ? labels : []
   for (var j = 0; j < all.length && out.length < max; j++) {
+    if (!all[j] || all[j].system === true) continue
     out.push({ kind: "label", id: String(all[j].id || ""),
       name: String(all[j].rawName || all[j].name || "") })
   }
@@ -1548,4 +1580,117 @@ function batchFailureNote(asked, failed, actionLabel, error) {
   var verb = label === "" ? "acted on" : label.charAt(0).toLowerCase() + label.slice(1)
   var reason = String(error || "").trim()
   return failed + " of " + asked + " could not be " + verb + (reason === "" ? "" : ": " + reason)
+}
+
+// ------------------------------------------------------------ folder tree
+
+// The rail's labels as a tree: "Archive/2026" sits under "Archive", indented,
+// and a parent can be folded. The delimiter is the server's own where the
+// provider reported one and "/" where it said nothing, which is what Gmail
+// nests with. An IMAP server that answers LIST with a NIL delimiter has no
+// hierarchy at all, and the provider passes that on as "": then a folder
+// named "a/b" is one folder, not a parent and a child.
+//
+// An ancestor no label names — a folder the server marked \Noselect, or a
+// Gmail label whose parent was never created — is still a row, because its
+// children have to hang from something; it has no id, opens nothing, and
+// folds like any other parent.
+//
+// Rows come back depth-first, siblings in name order, with the rows under a
+// folded parent left out. `unread` on a folded parent is its subtree's, so
+// folding a queue does not hide that it has mail in it.
+function labelTree(labels, collapsedPaths) {
+  var all = Array.isArray(labels) ? labels : []
+  var folded = Array.isArray(collapsedPaths) ? collapsedPaths : []
+  // Children keyed on a prototype-less object: a label named "constructor"
+  // or "__proto__" is a label, not a property of Object.
+  var root = { children: Object.create(null), order: [] }
+  for (var i = 0; i < all.length; i++) {
+    var label = all[i]
+    if (!label || label.system) continue
+    var delimiter = labelDelimiter(label)
+    var full = String(label.name || label.rawName || "")
+    if (full === "") continue
+    var parts = delimiter === "" ? [full] : full.split(delimiter)
+    var node = root
+    var path = ""
+    for (var p = 0; p < parts.length; p++) {
+      var part = parts[p]
+      if (part === "" && p > 0) continue
+      path = path === "" ? part : path + delimiter + part
+      if (!node.children[part]) {
+        node.children[part] = { name: part, path: path, label: null,
+          unread: 0, children: Object.create(null), order: [] }
+        node.order.push(part)
+      }
+      node = node.children[part]
+    }
+    node.label = label
+    node.unread = Math.max(0, Math.floor(Number(label.unread) || 0))
+  }
+
+  function subtreeUnread(node) {
+    var sum = node.unread
+    for (var c = 0; c < node.order.length; c++) sum += subtreeUnread(node.children[node.order[c]])
+    return sum
+  }
+
+  var out = []
+  function walk(node, depth) {
+    var names = node.order.slice().sort(function(a, b) {
+      var left = a.toLowerCase(), right = b.toLowerCase()
+      return left < right ? -1 : (left > right ? 1 : 0)
+    })
+    for (var n = 0; n < names.length; n++) {
+      var child = node.children[names[n]]
+      var hasChildren = child.order.length > 0
+      var expanded = !hasChildren || folded.indexOf(child.path) < 0
+      out.push({
+        id: child.label ? String(child.label.id || "") : "",
+        rawName: child.label ? String(child.label.rawName || child.label.name || "") : "",
+        name: child.name,
+        path: child.path,
+        depth: depth,
+        hasChildren: hasChildren,
+        expanded: expanded,
+        selectable: !!child.label,
+        unread: expanded ? child.unread : subtreeUnread(child)
+      })
+      if (expanded) walk(child, depth + 1)
+    }
+  }
+  walk(root, 0)
+  return out
+}
+
+// The labels in the order the rail draws them, folded rows left out — what
+// the Ctrl digits number, so a digit never opens a row that is not on screen.
+function visibleLabels(labels, collapsedPaths) {
+  var rows = labelTree(labels, collapsedPaths)
+  var all = Array.isArray(labels) ? labels : []
+  // One pass over the labels, not one per row: a rail of thousands of
+  // folders is rebuilt on every fold.
+  var byId = Object.create(null)
+  for (var l = 0; l < all.length; l++) {
+    if (all[l] && byId[String(all[l].id || "")] === undefined) byId[String(all[l].id || "")] = all[l]
+  }
+  var out = []
+  for (var i = 0; i < rows.length; i++) {
+    if (!rows[i].selectable) continue
+    var label = byId[rows[i].id]
+    if (label !== undefined) out.push(label)
+  }
+  return out
+}
+
+// The separator a provider nests with: its own where it reported one, "/"
+// where it reported nothing, and "" where it said in so many words that
+// there is no hierarchy — IMAP's NIL delimiter.
+function labelDelimiter(label) {
+  if (!label || label.delimiter === undefined || label.delimiter === null) return "/"
+  return String(label.delimiter)
+}
+
+function togglePath(paths, path) {
+  return toggleId(paths, path)
 }

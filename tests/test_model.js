@@ -619,13 +619,26 @@ assert.strictEqual(model.pluralize(0, "message"), "0 messages")
     { id: "L1", name: "Work", rawName: "Work" },
     { id: "L2", name: "Bills", rawName: "Bills" }
   ]
-  const slots = model.sidebarSlots(boxes, labels, 10)
+  // What App hands over is the rail's own order — the tree, siblings A to
+  // Z — and the slots keep it, so a digit and the row beside it agree.
+  const slots = model.sidebarSlots(boxes, model.visibleLabels(labels, []), 10)
   assert.strictEqual(slots.length, 5, "system labels are not rows and get no number")
   assert.strictEqual(slots[0].kind, "mailbox")
   assert.strictEqual(slots[0].key, "inbox")
   assert.strictEqual(slots[3].kind, "label")
   assert.strictEqual(slots[3].id, "L2",
     "Bills is numbered before Work: the digits follow the rail, and the rail is A to Z")
+  assert.strictEqual(model.sidebarSlots(boxes, labels, 10)[3].id, "L1",
+    "in the order given: the caller says what the rail draws")
+  // A child is numbered right after its parent, before a sibling the
+  // alphabet would put between them.
+  const treeLabels = [
+    { id: "Work (old)", name: "Work (old)", delimiter: "/" }, { id: "Work/Invoices", name: "Work/Invoices", delimiter: "/" },
+    { id: "Work", name: "Work", delimiter: "/" }]
+  deepEqual(model.sidebarSlots([], model.visibleLabels(treeLabels, []), 10).map(function (s) { return s.id }),
+    ["Work", "Work/Invoices", "Work (old)"])
+  deepEqual(model.sidebarSlots([], model.visibleLabels(treeLabels, ["Work"]), 10).map(function (s) { return s.id }),
+    ["Work", "Work (old)"], "a folded child has no number: a digit never opens a row that is not on screen")
   assert.strictEqual(slots[3].name, "Bills", "the name a provider selects a label by")
 
   assert.strictEqual(model.slotNumberOf(slots, "mailbox", "inbox"), 1)
@@ -718,7 +731,7 @@ assert.strictEqual(model.clampZoom(0), 0.6, "but zero is a number, and clamps")
 assert.strictEqual(model.clampZoom("1.5"), 1.5, "including one written as text")
 
 deepEqual(model.windowPrefs(""), {
-  sidebarCollapsed: false, bodyZoom: 1, bodyMode: "reader",
+  sidebarCollapsed: false, sidebarWidth: 0, listWidth: 0, collapsedFolders: [], bodyZoom: 1, bodyMode: "reader",
   alwaysShowImages: false, windowOpen: false
 })
 assert.strictEqual(model.windowPrefs('{"plainTextForced":true}').bodyMode, "plain",
@@ -726,6 +739,13 @@ assert.strictEqual(model.windowPrefs('{"plainTextForced":true}').bodyMode, "plai
 assert.strictEqual(model.windowPrefs('{"bodyMode":"original"}').bodyMode, "original")
 assert.strictEqual(model.windowPrefs('{"bodyMode":"unknown"}').bodyMode, "reader")
 assert.strictEqual(model.windowPrefs('{"windowOpen":true}').windowOpen, true)
+assert.strictEqual(model.windowPrefs('{"sidebarWidth":180,"listWidth":"420"}').sidebarWidth, 180)
+assert.strictEqual(model.windowPrefs('{"sidebarWidth":180,"listWidth":"420"}').listWidth, 420)
+assert.strictEqual(model.windowPrefs('{"sidebarWidth":-3,"listWidth":"wide"}').sidebarWidth, 0,
+  "a bad width is a default, not a pane of no width")
+assert.strictEqual(model.paneWidth(99999), 4000)
+assert.strictEqual(model.paneWidth(0), 0)
+deepEqual(model.windowPrefs('{"collapsedFolders":["Archive","",3,"Archive"]}').collapsedFolders, ["Archive", "3"])
 assert.strictEqual(model.windowPrefs('{"windowOpen":"yes"}').windowOpen, false)
 
 // ------------------------------------------------- what a detail read carries
@@ -1144,8 +1164,9 @@ assert.strictEqual(model.previewReadable(dwelt, ""), false)
     "Todo", "matching by id needs no query rule")
 
   // The switcher's rows are the rail's slots, numbered the way the Ctrl keys
-  // are, with the open scope marked.
-  const slots = model.sidebarSlots(boxes, labels, 10)
+  // are, with the open scope marked. The slots take the rail's own order —
+  // the tree, siblings A to Z — so Receipts sits above todo.
+  const slots = model.sidebarSlots(boxes, model.visibleLabels(labels, []), 10)
   const rows = model.switcherRows(slots, labels,
     model.currentScope("inbox", boxes, labels, "label:todo", "Label_17", gmailQuery))
   assert.strictEqual(rows.length, 4)
@@ -1224,3 +1245,78 @@ assert.strictEqual(model.previewReadable(dwelt, ""), false)
   assert.strictEqual(model.batchFailureNote(5, 2, "Moved to trash", "server said no"), "2 of 5 could not be moved to trash: server said no")
   assert.strictEqual(model.batchFailureNote(3, 1, "Archived", ""), "1 of 3 could not be archived")
 }
+
+// ------------------------------------------------------------ folder tree
+{
+  const labels = [
+    { id: "INBOX", name: "INBOX", system: true },
+    { id: "Archive/2025", name: "Archive/2025", rawName: "Archive/2025", delimiter: "/", unread: 2 },
+    { id: "Archive", name: "Archive", rawName: "Archive", delimiter: "/", unread: 1 },
+    { id: "Archive/2026/Q1", name: "Archive/2026/Q1", rawName: "Archive/2026/Q1", delimiter: "/", unread: 4 },
+    { id: "Receipts", name: "Receipts", rawName: "Receipts", delimiter: "/", unread: 0 },
+    { id: "Label_3", name: "todo", rawName: "todo", unread: 1 }]
+
+  const open = model.labelTree(labels, [])
+  deepEqual(open.map(function (r) { return [r.path, r.depth, r.selectable, r.hasChildren, r.unread] }), [
+    ["Archive", 0, true, true, 1],
+    ["Archive/2025", 1, true, false, 2],
+    ["Archive/2026", 1, false, true, 0],
+    ["Archive/2026/Q1", 2, true, false, 4],
+    ["Receipts", 0, true, false, 0],
+    ["todo", 0, true, false, 1]],
+    "children hang under parents, a missing ancestor is a row of its own, siblings sort by name")
+  assert.strictEqual(open[0].name, "Archive")
+  assert.strictEqual(open[3].name, "Q1", "a row shows its own segment")
+  assert.strictEqual(open[3].id, "Archive/2026/Q1", "and keeps the whole id")
+
+  const folded = model.labelTree(labels, ["Archive"])
+  deepEqual(folded.map(function (r) { return r.path }), ["Archive", "Receipts", "todo"])
+  assert.strictEqual(folded[0].expanded, false)
+  assert.strictEqual(folded[0].unread, 7, "a folded parent counts its subtree")
+
+  const partly = model.labelTree(labels, ["Archive/2026"])
+  deepEqual(partly.map(function (r) { return r.path }), ["Archive", "Archive/2025", "Archive/2026", "Receipts", "todo"])
+  assert.strictEqual(partly[2].unread, 4)
+
+  // A server delimiter that is not a slash, and a Gmail label with none.
+  const dotted = model.labelTree([
+    { id: "a.b", name: "a.b", delimiter: "." }, { id: "a", name: "a", delimiter: "." },
+    { id: "x/y", name: "x/y" }], [])
+  deepEqual(dotted.map(function (r) { return [r.path, r.depth] }), [["a", 0], ["a.b", 1], ["x", 0], ["x/y", 1]])
+
+  deepEqual(model.visibleLabels(labels, ["Archive"]).map(function (l) { return l.id }),
+    ["Archive", "Receipts", "Label_3"], "the digits follow what is on screen")
+  deepEqual(model.visibleLabels(labels, []).map(function (l) { return l.id }),
+    ["Archive", "Archive/2025", "Archive/2026/Q1", "Receipts", "Label_3"])
+  deepEqual(model.togglePath(["Archive"], "Archive"), [])
+  deepEqual(model.togglePath([], "Archive/2026"), ["Archive/2026"])
+  deepEqual(model.labelTree(null, null), [])
+  // A label named like an Object property is still a label.
+  const odd = model.labelTree([{ id: "constructor", name: "constructor" },
+    { id: "constructor/2026", name: "constructor/2026" }, { id: "__proto__", name: "__proto__" },
+    { id: "toString", name: "toString" }], [])
+  deepEqual(odd.map(function (r) { return r.path }), ["__proto__", "constructor", "constructor/2026", "toString"])
+
+  // The delimiter is the server's word. Reported: nest on it. Not reported:
+  // "/", which is what Gmail nests with. Reported as none — IMAP's NIL, which
+  // the provider passes on as "" — no nesting at all, so a folder named
+  // "a/b" is one folder and a dot in a name is only a dot.
+  assert.strictEqual(model.labelDelimiter({ delimiter: "." }), ".")
+  assert.strictEqual(model.labelDelimiter({ delimiter: "/" }), "/")
+  assert.strictEqual(model.labelDelimiter({ name: "todo" }), "/")
+  assert.strictEqual(model.labelDelimiter(null), "/")
+  assert.strictEqual(model.labelDelimiter({ delimiter: "" }), "")
+  const flat = model.labelTree([
+    { id: "a/b", name: "a/b", rawName: "a/b", delimiter: "" },
+    { id: "a", name: "a", rawName: "a", delimiter: "" },
+    { id: "x.y", name: "x.y", rawName: "x.y", delimiter: "" }], [])
+  deepEqual(flat.map(function (r) { return [r.path, r.depth, r.hasChildren, r.selectable] }),
+    [["a", 0, false, true], ["a/b", 0, false, true], ["x.y", 0, false, true]],
+    "a NIL delimiter makes a flat list, slashes and all")
+  deepEqual(model.visibleLabels([{ id: "a/b", name: "a/b", delimiter: "" }, { id: "a", name: "a", delimiter: "" }], ["a"])
+    .map(function (l) { return l.id }), ["a", "a/b"], "and nothing folds under anything")
+  const slashed = model.labelTree([{ id: "a.b", name: "a.b", delimiter: "/" }, { id: "a", name: "a", delimiter: "/" }], [])
+  deepEqual(slashed.map(function (r) { return [r.path, r.depth] }), [["a", 0], ["a.b", 0]],
+    "a slash server does not nest on a dot")
+}
+
