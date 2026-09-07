@@ -332,7 +332,9 @@ function validateSettings(raw) {
     return { ok: false, error: "That is not a valid SMTP server address" }
   if (usesXoauth2(settings) && settings.tokenAccount === "")
     return { ok: false, error: "XOAUTH2 mailboxes need a token helper account name" }
-  if (sendsViaGraph(settings) && settings.graphTokenAccount === "")
+  // Only the token-helper path needs a Graph token account named; the Outlook
+  // provider exchanges its own refresh token for Graph's audience.
+  if (sendsViaGraph(settings) && usesXoauth2(settings) && settings.graphTokenAccount === "")
     return { ok: false, error: "Name the token account for Microsoft Graph" }
   return { ok: true, error: "", settings: settings }
 }

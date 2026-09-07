@@ -950,8 +950,11 @@ assert.strictEqual(imap.sendsViaGraph({}), false)
 assert.strictEqual(imap.normalizeSettings({ imapHost: "outlook.office365.com", send: "graph", graphTokenAccount: " sfl-graph " }).send, "graph")
 assert.strictEqual(imap.normalizeSettings({ imapHost: "outlook.office365.com", send: "graph", graphTokenAccount: " sfl-graph " }).graphTokenAccount, "sfl-graph")
 assert.strictEqual(imap.normalizeSettings({ imapHost: "x.example.com", send: "smtp" }).send, "", "anything but graph is the SMTP default")
-assert.ok(imap.validateSettings({ imapHost: "outlook.office365.com", username: "j@x", send: "graph" }).error.indexOf("Graph") >= 0,
+assert.ok(imap.validateSettings({ auth: "xoauth2", tokenAccount: "sfl", imapHost: "outlook.office365.com", username: "j@x", send: "graph" }).error.indexOf("Graph") >= 0,
   "Graph without a token account is refused")
+assert.strictEqual(imap.validateSettings({
+  username: "ada@contoso.com", imapHost: "outlook.office365.com", send: "graph"
+}).ok, true, "the Outlook provider exchanges its own token for Graph and names no helper account")
 assert.strictEqual(imap.validateSettings({ imapHost: "outlook.office365.com", username: "j@x", send: "graph", graphTokenAccount: "g" }).ok, true)
 
 console.log("Imap.js ok")
