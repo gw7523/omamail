@@ -81,9 +81,12 @@ function verificationUri(value) {
   var text = trimmed(value)
   var match = text.match(/^https:\/\/([^\/:?#]+)(?::443)?(?:[\/?#]|$)/i)
   if (!match) return ""
+  // The pages Microsoft sends people to: microsoft.com/devicelogin and
+  // www.microsoft.com/link for personal accounts, login.microsoft.com/device
+  // for a work or school tenant, and the sign-in host itself.
   var host = match[1].toLowerCase()
   if (host !== "microsoft.com" && host !== "www.microsoft.com"
-      && host !== "login.microsoftonline.com") return ""
+      && host !== "login.microsoft.com" && host !== "login.microsoftonline.com") return ""
   return text
 }
 
