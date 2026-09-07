@@ -63,8 +63,8 @@ Item {
       }
       function mailScopes() { return "https://outlook.office.com/IMAP.AccessAsUser.All https://outlook.office.com/SMTP.Send" }
       function graphScopes() {
-        return shortScopes ? "Mail.Send openid profile email"
-          : "https://graph.microsoft.com/Mail.Send"
+        return shortScopes ? "Mail.Send Calendars.ReadWrite openid profile email"
+          : "https://graph.microsoft.com/Mail.Send https://graph.microsoft.com/Calendars.ReadWrite"
       }
       function postForm(url, body, callback) {
         var params = fields(body)
@@ -183,7 +183,7 @@ Item {
       verify(auth.requests[3].url.indexOf("/devicecode") >= 0)
       verify(auth.requests[3].scope.indexOf("offline_access") >= 0)
       verify(auth.requests[3].scope.indexOf("openid") >= 0)
-      verify(auth.requests[3].scope.indexOf("Mail.Send") >= 0)
+      verify(auth.requests[3].scope.indexOf("Calendars.ReadWrite") >= 0)
       verify(auth.requests[3].scope.indexOf("outlook.office.com") < 0)
       compare(auth.userCode, "CODE4")
       auth.pollDeviceCode()

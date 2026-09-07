@@ -335,7 +335,7 @@ Column {
       Text {
         width: parent.width
         text: root.auth && root.auth.devicePurpose === "graph"
-          ? "One more code, to allow Microsoft Graph (sending). Enter it on the Microsoft page opened in your browser:"
+          ? "One more code, to allow Microsoft Graph (sending and the calendar). Enter it on the Microsoft page opened in your browser:"
           : "Enter this code on the Microsoft page opened in your browser:"
         color: root.textColor
         font.family: root.panelFontFamily
