@@ -66,6 +66,9 @@ assert.strictEqual(microsoft.verificationUri("https://microsoft.com/devicelogin"
   "https://microsoft.com/devicelogin")
 assert.strictEqual(microsoft.verificationUri("https://login.microsoftonline.com/common/oauth2/deviceauth"),
   "https://login.microsoftonline.com/common/oauth2/deviceauth")
+assert.strictEqual(microsoft.verificationUri("https://login.microsoft.com/device"),
+  "https://login.microsoft.com/device", "where a work or school tenant sends people")
+assert.strictEqual(microsoft.verificationUri("https://www.microsoft.com/link"), "https://www.microsoft.com/link")
 assert.strictEqual(microsoft.verificationUri("http://microsoft.com/devicelogin"), "")
 assert.strictEqual(microsoft.verificationUri("https://microsoft.com.evil.example/devicelogin"), "")
 
