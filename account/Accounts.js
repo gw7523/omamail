@@ -196,6 +196,10 @@ function makeAccount(account) {
     jmap: makeJmapSettings(raw.jmap),
     label: trimmed(raw.label),
     signature: trimmed(raw.signature),
+    // The signature as markup, imported from a file and rebuilt by
+    // `Signature.js` before it is stored: never the file's own bytes. Sent as
+    // the HTML alternative under the plain signature above.
+    signatureHtml: trimmed(raw.signatureHtml),
     // The labels watched for new mail, by id. A fact about the mailbox, so
     // it lives beside its name rather than in the window's file.
     monitored: idList(raw.monitored),
@@ -541,6 +545,25 @@ function setLabel(list, id, text) {
 // Stored as typed, with no separator added. A client that inserts "-- " turns
 // every signature into two decisions — what it says, and whether the line it
 // grew is wanted — and the user who wants one can type it.
+// The sign-off belongs to the mailbox rather than to the window. Two accounts
+// are two identities, and one signature under both is wrong for whichever it
+// was not written for — so it sits beside the label, which is the other thing
+// here the user chose and the server did not. Nothing about it is secret; the
+// keyring holds what is.
+//
+// Stored as typed, with no separator added. A client that inserts "-- " turns
+// every signature into two decisions — what it says, and whether the line it
+// grew is wanted — and the user who wants one can type it.
+function setSignatureHtml(list, id, html) {
+  var next = copyList(list)
+  var at = indexOfId(next.accounts, id)
+  if (at < 0) return next
+  var entry = makeAccount(next.accounts[at])
+  entry.signatureHtml = trimmed(html)
+  next.accounts[at] = entry
+  return next
+}
+
 function setSignature(list, id, text) {
   var next = copyList(list)
   var at = indexOfId(next.accounts, id)

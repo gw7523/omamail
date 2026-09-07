@@ -236,6 +236,10 @@ Item {
     var entry = Accounts.find(accountList, String(accountId || ""))
     return entry ? String(entry.email || "") : ""
   }
+  readonly property string activeSignatureHtml: {
+    var entry = Accounts.find(accountList, activeAccountId)
+    return entry ? String(entry.signatureHtml || "") : ""
+  }
   readonly property string calendarAccountId: current && String(current.accountId || "") !== ""
     ? String(current.accountId) : "__no_google_account__"
 
@@ -563,6 +567,13 @@ Item {
     saveAccounts()
   }
 
+  function setAccountSignatureHtml(id, html) {
+    var next = Accounts.setSignatureHtml(accountList, id, html)
+    if (Accounts.serialize(next) === Accounts.serialize(accountList)) return
+    accountList = next
+    saveAccounts()
+  }
+
   function setAccountSignature(id, text) {
     var next = Accounts.setSignature(accountList, id, text)
     if (Accounts.serialize(next) === Accounts.serialize(accountList)) return
@@ -848,7 +859,8 @@ Item {
         // The name as it was typed, empty when none was, so a field editing
         // it shows what is there rather than the address standing in for it.
         label: String(accounts[i].label || ""),
-        signature: String(accounts[i].signature || "")
+        signature: String(accounts[i].signature || ""),
+        signatureHtml: String(accounts[i].signatureHtml || "")
       })
     }
     return out
@@ -1514,7 +1526,7 @@ Item {
     // routing it was missing.
     var values = fields || ({})
     var host = sendHostFor(values)
-    return host ? host.send(withSourceDraftId(values)) : false
+    return host ? host.send(withSignatures(withSourceDraftId(values), host)) : false
   }
 
   // The mailbox a submission is sent from.
@@ -1582,6 +1594,21 @@ Item {
     }
     return null
   }
+
+  // The signatures ride with the fields rather than being read by the
+  // account: the account holds no copy of its own entry, and the window
+  // holds no signature. Both readings — text and markup — go, because the
+  // message carries both.
+  function withSignatures(fields, host) {
+    var values = {}
+    var source = fields || ({})
+    for (var key in source) values[key] = source[key]
+    var entry = Accounts.find(accountList, host ? String(host.accountId || "") : activeAccountId)
+    values.signature = entry ? String(entry.signature || "") : ""
+    values.signatureHtml = entry ? String(entry.signatureHtml || "") : ""
+    return values
+  }
+
   function saveDraft(fields, callback) {
     var values = fields || ({})
     var target = draftOwner(values)
@@ -1590,7 +1617,7 @@ Item {
       if (typeof callback === "function") callback(null, "The mailbox for this draft is unavailable")
       return null
     }
-    return host.saveDraft(withSourceDraftId(values), callback)
+    return host.saveDraft(withSignatures(withSourceDraftId(values), host), callback)
   }
   function fail(text) { if (current) current.fail(text) }
   function note(text) { if (current) current.note(text) }
