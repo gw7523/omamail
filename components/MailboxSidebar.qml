@@ -21,6 +21,7 @@ Item {
   required property string panelFontFamily
   property bool collapsed: false
   property bool calendarSelected: false
+  property bool agentSelected: false
 
   signal mailboxSelected(string key)
   signal labelSelected(string labelId, string name)
@@ -29,6 +30,7 @@ Item {
   // names), its path, and where the menu goes.
   signal labelMenuRequested(string labelId, string path, real sceneX, real sceneY)
   signal calendarRequested()
+  signal agentRequested()
 
   // The numbered list App.qml also gives the keys, so a badge and the key that
   // opens the row it sits on cannot disagree.
@@ -169,6 +171,17 @@ Item {
       onActivated: root.calendarRequested()
     }
 
+    // Only where an agent is set: the pane with no agent is a page saying so.
+    Entry {
+      x: Style.space(6)
+      visible: !!root.service && root.service.hasAgent
+      label: "Agent"
+      icon: "agent"
+      selected: root.agentSelected
+      attention: !!root.service && root.service.agentAttention
+      onActivated: root.agentRequested()
+    }
+
     Item {
       width: parent.width
       height: Style.space(6)
@@ -199,6 +212,8 @@ Item {
     // Watched for new mail: the row keeps its count in the accent even while
     // it is not the one open, and the glyph says so.
     property bool monitored: false
+    // The agent wants the owner: the glyph breathes in the accent.
+    property bool attention: false
 
     // The badge names the key, not the position: the tenth row is opened by
     // Alt+0, so it says 0. A row past the tenth has no key and no badge.
@@ -211,6 +226,27 @@ Item {
     color: entry.selected
       ? Style.selectedFillFor(root.textColor, root.accentColor)
       : (hover.hovered ? Style.hoverFillFor(root.textColor, root.accentColor) : "transparent")
+
+    Rectangle {
+      id: entryHalo
+      anchors.centerIn: glyph
+      width: glyph.width + Style.space(10)
+      height: width
+      radius: Style.cornerRadius
+      color: Qt.rgba(root.accentColor.r, root.accentColor.g, root.accentColor.b, 0.18)
+      border.width: Style.normalBorderWidth
+      border.color: root.accentColor
+      visible: entry.attention
+      opacity: 0
+
+      SequentialAnimation on opacity {
+        running: entry.attention
+        loops: Animation.Infinite
+        NumberAnimation { from: 0.15; to: 1.0; duration: 900; easing.type: Easing.InOutSine }
+        NumberAnimation { from: 1.0; to: 0.15; duration: 900; easing.type: Easing.InOutSine }
+        onRunningChanged: if (!running) entryHalo.opacity = 0
+      }
+    }
 
     ActionIcon {
       id: glyph

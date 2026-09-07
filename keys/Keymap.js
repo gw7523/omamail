@@ -13,7 +13,7 @@
 // follows it — a context that is not text entry parks the focus rather than
 // leaving it wherever the last click put it. Keeping those two as separate
 // things is what let a dismissed compose field go on eating j and k.
-var CONTEXTS = ["list", "reader", "search", "compose", "page", "calendar"]
+var CONTEXTS = ["list", "reader", "search", "compose", "page", "calendar", "agent"]
 
 // Shorthands, so a row says where it lives rather than restating the set.
 var MAIL = ["list", "reader"]
@@ -169,13 +169,21 @@ var BINDINGS = [
   // tabs. Same rows, same digits: a bare digit inside it is the Ctrl digit.
   { id: "switchMailbox", keys: ["Alt+M"], contexts: MAIL,
     group: "Going", label: "Go to a mailbox" },
+  // The message agent, on the cursor row. A popup, so the same shape as the
+  // switchers: opened through the table, then answering its own keys.
+  { id: "askAgent", keys: ["Alt+G"], contexts: MAIL,
+    group: "Acting", label: "Ask the agent about the message" },
 
   { id: "calendar", keys: ["Alt+C"], contexts: ["list", "reader", "calendar"],
     group: "Going", label: "Switch between mail and calendar" },
-  { id: "mailView", keys: ["Ctrl+Shift+M"], contexts: ["list", "reader", "calendar"],
+  { id: "mailView", keys: ["Ctrl+Shift+M"], contexts: ["list", "reader", "calendar", "agent"],
     group: "Going", label: "Go to mail" },
-  { id: "calendarView", keys: ["Ctrl+Shift+C"], contexts: ["list", "reader", "calendar"],
+  { id: "calendarView", keys: ["Ctrl+Shift+C"], contexts: ["list", "reader", "calendar", "agent"],
     group: "Going", label: "Go to calendar" },
+  // The agent pane is a text field first, so its context binds no bare key;
+  // this and the two above are how the keyboard gets in and out of it.
+  { id: "agentView", keys: ["Ctrl+Shift+G"], contexts: ["list", "reader", "calendar", "agent"],
+    group: "Going", label: "Go to the agent pane" },
   { id: "toggleSidebar", keys: ["["], contexts: ["list", "reader", "calendar"],
     group: "Going", label: "Show or hide the sidebar" },
 
@@ -212,6 +220,7 @@ function contextFor(state) {
   if (value.composing) return "compose"
   if (value.searchFocused) return "search"
   if (value.calendarVisible) return "calendar"
+  if (value.agentVisible) return "agent"
   if (value.currentView === "reader") return "reader"
   return "list"
 }

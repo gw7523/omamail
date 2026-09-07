@@ -13,6 +13,7 @@ import "account/Navigation.js" as Nav
 import "compose/Recovery.js" as Recovery
 import "keys/Keymap.js" as Keymap
 import "providers/Registry.js" as Provider
+import "agent/Agent.js" as Agent
 import "message/Mailto.js" as Mailto
 import "message/Message.js" as Message
 import "components"
@@ -222,7 +223,7 @@ Item {
   // Ticked rows mean the selection whenever the list is on screen: alone, or
   // beside the reader in a wide window. A plain click opens a message and
   // puts the window in the reader view, so a click, a Shift+click and `d`
-  // would otherwise trash only the open message with the ticks ignored.
+  // used to trash only the open message — the ticks were there and ignored.
   readonly property bool listOnScreen: currentView === "list"
     || (currentView === "reader" && !compact)
   readonly property bool selectionActive: checkedIds.length > 0 && listOnScreen
@@ -345,8 +346,10 @@ Item {
   readonly property string page: navPage.kind
   readonly property string overlay: navOverlay ? navOverlay.kind : ""
   readonly property string currentView: page === "reader" ? "reader"
-    : ((page === "calendar" || page === "calendarDetail") ? "calendar" : "list")
+    : ((page === "calendar" || page === "calendarDetail") ? "calendar"
+      : (page === "agent" ? "agent" : "list"))
   readonly property bool calendarVisible: currentView === "calendar"
+  readonly property bool agentVisible: currentView === "agent"
   readonly property bool showSettings: page === "settings"
   readonly property bool showPicker: page === "picker"
   readonly property bool showSetup: page === "setup"
@@ -535,6 +538,8 @@ Item {
       sidebarWidth = service.sidebarWidth
       listWidth = service.listWidth
     }
+    // Jobs finish while the window is shut; the rows say so as soon as it opens.
+    if (service && typeof service.refreshAgentJobs === "function") service.refreshAgentJobs()
     Qt.callLater(function() { focusScope.applyContextFocus() })
   }
 
@@ -639,6 +644,14 @@ Item {
   function showCalendar() {
     navUntouched = false
     nav = Nav.replaceRoot(nav, "calendar")
+  }
+
+  // The agent pane is the third root, beside mail and the calendar.
+  function showAgent() {
+    if (!service || !service.hasAgent) return false
+    navUntouched = false
+    nav = Nav.replaceRoot(nav, "agent")
+    return true
   }
 
   // Moving the cursor has to bring the row with it. The list is a Column in a
@@ -1000,6 +1013,60 @@ Item {
     return actOnCursor(action, outside)
   }
 
+  // The agent popup on a message: at a control's edge from a button, centred
+  // from the key. The subject is read off the list row or the open message so
+  // the popup can say which message it is asking about.
+  function agentSubjectFor(id) {
+    if (!service) return ""
+    var index = Model.indexById(service.messages, id)
+    if (index >= 0) return String(service.messages[index].subject || "")
+    if (service.selectedId === id && service.selectedMessage)
+      return String(service.selectedMessage.subject || "")
+    return ""
+  }
+
+  // With rows ticked, the ask is about all of them — one job, one popup
+  // titled with the count — by the rule every other action follows.
+  function openAgentAt(id, sceneX, sceneY) {
+    if (!service || !service.hasAgent) return false
+    if (selectionActive && checkedIds.indexOf(String(id || "")) >= 0) {
+      agentPrompt.openForSelection(checkedIds, sceneX, sceneY)
+      return true
+    }
+    if (String(id || "") === "") return false
+    agentPrompt.openFor(id, agentSubjectFor(id), sceneX, sceneY)
+    return true
+  }
+
+  function openAgentCentered(id) {
+    if (!service || !service.hasAgent) return false
+    if (selectionActive) {
+      var centre = root.mapToGlobal(Math.max(0, root.width / 2 - Style.space(190)),
+        Math.max(0, root.height / 2 - Style.space(90)))
+      agentPrompt.openForSelection(checkedIds, centre.x, centre.y)
+      return true
+    }
+    if (String(id || "") === "") return false
+    agentPrompt.openCenteredFor(id, agentSubjectFor(id))
+    return true
+  }
+
+  // The pane, opened on one job: from a row's glyph, or the popup's button.
+  function showAgentJob(jobId) {
+    if (!showAgent()) return false
+    agentView.openOn(jobId)
+    return true
+  }
+
+  // A row's glyph means "show me what the agent is doing with this", which
+  // is the pane's card; the popup is for asking, and the reader's button
+  // and Alt+G still open it.
+  function openAgentFromRow(id, sceneX, sceneY) {
+    var job = service ? service.agentJobs[String(id || "")] : null
+    if (job) return showAgentJob(String(job.id))
+    return openAgentAt(id, sceneX, sceneY)
+  }
+
   // Acting on the open message closes it: it is about to leave this list.
   //
   // With rows ticked, the key means all of them rather than the one under the
@@ -1143,6 +1210,10 @@ Item {
       return
     }
     if (id === "toggleCheck") return toggleCheck(cursorId)
+    if (id === "askAgent") {
+      var target = currentView === "reader" && service ? service.selectedId : cursorId
+      return openAgentCentered(target)
+    }
     if (id === "checkAll") return checkAll()
     if (id === "moveToLabel") return openLabelPicker()
     if (id === "markRead") return actOnCursor("markRead")
@@ -1184,6 +1255,7 @@ Item {
       return
     }
     if (id === "mailView") return backToList()
+    if (id === "agentView") { showAgent(); return }
     if (id === "calendarView") {
       showCalendar()
       calendarView.refresh()
@@ -1483,7 +1555,6 @@ Item {
     })
   }
 
-
   function confirmDelete(request) {
     if (!service) return
     if (request.kind === "event" && request.event) {
@@ -1586,6 +1657,7 @@ Item {
         composing: root.composing,
         searchFocused: searchBar.fieldFocused,
         calendarVisible: root.calendarVisible,
+        agentVisible: root.agentVisible,
         currentView: root.currentView,
         sendPending: !!root.service && root.service.sendPending
       }))
@@ -1605,6 +1677,7 @@ Item {
           else compose.takeFocus()
         }
         else if (keyContext === "search") searchBar.focusField()
+        else if (keyContext === "agent") agentView.takeFocus()
         else parkKeyboard()
       }
 
@@ -1690,7 +1763,7 @@ Item {
             id: mailboxScope
             objectName: "scope-mailbox"
             anchors.verticalCenter: parent.verticalCenter
-            visible: !root.showPage && !root.composing && !root.calendarVisible
+            visible: !root.showPage && !root.composing && !root.calendarVisible && !root.agentVisible
             iconName: root.scope.icon
             text: root.scope.name
             tooltipText: "Go to a mailbox · Alt+M"
@@ -1754,7 +1827,7 @@ Item {
             width: Math.min(Style.space(340), parent.width)
             // Below this it is a slot too small to type in; the shortcut still
             // works and reopens it as the window grows.
-            visible: !root.showPage && !root.composing && !root.calendarVisible
+            visible: !root.showPage && !root.composing && !root.calendarVisible && !root.agentVisible
               && parent.width >= Style.space(120)
           textColor: root.foreground
           accentColor: root.accent
@@ -1785,6 +1858,27 @@ Item {
           // Checking for mail and writing one are both things you do to the
           // mailbox as a whole, so they sit together. The menu is the window's
           // own, and it stays on the left with the mark.
+          // The agent pane, from the header as well as from the rail's foot:
+          // the rail is gone in a narrow window and folded in a collapsed one,
+          // and this is the one place that is always there. Lit while the
+          // pane is up, in the accent while a job is running.
+          IconButton {
+            objectName: "header-agent-button"
+            anchors.verticalCenter: parent.verticalCenter
+            visible: !root.showPage && !root.composing && !!root.service && root.service.hasAgent
+            iconName: "agent"
+            tooltipText: root.agentVisible ? "Back to mail · Ctrl+Shift+M" : "Agent pane · Ctrl+Shift+G"
+            foreground: !!root.service && root.service.agentBusy ? root.accent : root.dim
+            hoverColor: root.foreground
+            fontFamily: root.fontFamily
+            selected: root.agentVisible
+            attention: !!root.service && root.service.agentAttention
+            onClicked: {
+              if (root.agentVisible) root.backToList()
+              else root.showAgent()
+            }
+          }
+
           IconButton {
             objectName: "refresh-button"
             anchors.verticalCenter: parent.verticalCenter
@@ -1828,7 +1922,7 @@ Item {
           Button {
             objectName: "compose-button"
             anchors.verticalCenter: parent.verticalCenter
-            visible: !root.showPage && !root.composing && !root.calendarVisible
+            visible: !root.showPage && !root.composing && !root.calendarVisible && !root.agentVisible
             text: "Compose"
             tooltipText: "Compose · c"
             foreground: root.dim
@@ -1870,6 +1964,8 @@ Item {
           visible: !root.compact && !root.showPage && !root.composing
           collapsed: root.sidebarCollapsed
           calendarSelected: root.calendarVisible
+          agentSelected: root.agentVisible
+          onAgentRequested: root.showAgent()
           service: root.service
           textColor: root.foreground
           accentColor: root.accent
@@ -2001,10 +2097,12 @@ Item {
               panelFontFamily: root.fontFamily
               cursorId: root.cursorId
               checkedIds: root.checkedIds
+              urgentColor: root.urgent
               onMessageActivated: function(id) { root.openMessage(id) }
+              onAgentRequested: function(id, sceneX, sceneY) { root.openAgentFromRow(id, sceneX, sceneY) }
+              onRowActionRequested: function(id, action) { root.actFromRow(id, action) }
               onCheckToggled: function(id) { root.toggleCheck(id) }
               onCheckRangeRequested: function(id) { root.checkRange(id) }
-              onRowActionRequested: function(id, action) { root.actFromRow(id, action) }
               onMenuRequested: function(id, sceneX, sceneY) {
                 root.cursorId = id
                 rowMenu.openAt(id, sceneX, sceneY)
@@ -2067,7 +2165,7 @@ Item {
           anchors.right: parent.right
           anchors.top: parent.top
           anchors.bottom: parent.bottom
-          visible: !root.showPage && !root.composing && !root.calendarVisible
+          visible: !root.showPage && !root.composing && !root.calendarVisible && !root.agentVisible
             && (!root.compact || root.currentView === "reader")
           service: root.service
           textColor: root.foreground
@@ -2099,11 +2197,21 @@ Item {
           onMailtoRequested: function(url) {
             root.openDraft(Mailto.parse(url))
           }
+          agentOpen: agentPrompt.opened && !!root.service && agentPrompt.messageId === root.service.selectedId
+          agentWorking: !!root.service && root.service.selectedId !== ""
+            && Agent.isActive(root.service.agentJobs[root.service.selectedId])
+          agentAttention: !!root.service && root.service.selectedId !== ""
+            && root.service.agentAttentionByMessage[root.service.selectedId] === true
           onAddressMenuRequested: function(addresses, sceneX, sceneY) {
             addressMenu.openAt(addresses, sceneX, sceneY)
           }
           onActionRequested: function(action) {
             if (!root.service || root.service.selectedId === "") return
+            if (action === "agent") {
+              var scene = reader.mapToGlobal(reader.width / 2, Style.space(48))
+              root.openAgentAt(root.service.selectedId, scene.x, scene.y)
+              return
+            }
             // The toolbar acts on the message it is under, which is normally
             // the row the cursor is on — but with the rail up the reader can be
             // showing a *member*, and the list has no row for one. Moving the
@@ -2131,6 +2239,12 @@ Item {
           id: compose
           anchors.fill: parent
           visible: opened && !root.showPage
+          agentOpen: composeAgent.opened
+          agentWorking: composeAgent.working
+          agentAttention: !!root.service && root.service.agentDraftJobs.length > 0
+            && Agent.wantsAttention(root.service.agentDraftJobs[0], [])
+            && !composeAgent.opened
+          onAgentRequested: function(sceneX, sceneY) { composeAgent.open() }
           service: root.service
           textColor: root.foreground
           backgroundColor: root.background
@@ -2169,6 +2283,24 @@ Item {
             else root.dropOverlay("eventComposer")
           }
           controller: root.service ? root.service.calendarController : null
+          textColor: root.foreground
+          backgroundColor: root.background
+          accentColor: root.accent
+          urgentColor: root.urgent
+          dimColor: root.dim
+          panelFontFamily: root.fontFamily
+        }
+
+        AgentView {
+          id: agentView
+          anchors.top: parent.top
+          anchors.right: parent.right
+          anchors.bottom: parent.bottom
+          anchors.left: sidebarSplitter.visible ? sidebarSplitter.right
+            : (sidebar.visible ? sidebar.right : parent.left)
+          visible: root.agentVisible && !root.showPage && !root.composing
+          z: 11
+          service: root.service
           textColor: root.foreground
           backgroundColor: root.background
           accentColor: root.accent
@@ -2624,6 +2756,7 @@ Item {
       // The window menu is opened by the menu button beside the mark.
       AppMenu {
         id: appMenu
+        objectName: "app-menu"
         anchors.fill: parent
         textColor: root.foreground
         popupBackgroundColor: root.popupBackground
@@ -2690,6 +2823,50 @@ Item {
         panelFontFamily: root.fontFamily
         rows: root.switcherRows
         onRowChosen: function(index) { root.goSlot(index) }
+      }
+
+      AgentPrompt {
+        id: agentPrompt
+        objectName: "agent-prompt"
+        anchors.fill: parent
+        textColor: root.foreground
+        accentColor: root.accent
+        urgentColor: root.urgent
+        dimColor: root.dim
+        popupBackgroundColor: root.popupBackground
+        popupBorderColor: root.popupBorder
+        panelFontFamily: root.fontFamily
+        // Live while the popup is up: the state and the last line follow the
+        // job as the runner's listing changes under it.
+        job: root.service && messageId !== "" ? (root.service.agentJobs[messageId] || null) : null
+        onAsked: function(id, prompt) { if (root.service) root.service.askAgent(id, prompt) }
+        onAskedMany: function(ids, prompt) {
+          if (root.service && root.service.askAgentMany(ids, prompt)) root.checkedIds = []
+        }
+        onAnswered: function(jobId, answer) { if (root.service) root.service.answerAgent(jobId, answer) }
+        onPaneRequested: function(jobId) { root.showAgentJob(jobId) }
+        onLooked: function(jobId) { if (root.service) root.service.acknowledgeAgentJob(jobId) }
+        onCancelRequested: function(id) { if (root.service) root.service.cancelAgent(id) }
+      }
+
+      ComposeAgent {
+        id: composeAgent
+        objectName: "compose-agent"
+        anchors.fill: parent
+        service: root.service
+        textColor: root.foreground
+        accentColor: root.accent
+        urgentColor: root.urgent
+        dimColor: root.dim
+        popupBackgroundColor: root.popupBackground
+        popupBorderColor: root.popupBorder
+        panelFontFamily: root.fontFamily
+        onAskRequested: function(ask) {
+          if (root.service) root.service.askAgentDraft(compose.currentFields(), ask)
+        }
+        onReplaceRequested: function(text) { compose.replaceBody(text) }
+        onInsertRequested: function(text) { compose.insertAtCursor(text) }
+        onLooked: function(jobId) { if (root.service) root.service.acknowledgeAgentJob(jobId) }
       }
 
       LabelMenu {
