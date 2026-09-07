@@ -126,3 +126,9 @@ assert.ok(microsoft.redact('{"access_token":"eyJsecret.payload.signature","devic
   .indexOf("secret") < 0)
 
 console.log("test_microsoft_oauth.js ok")
+
+// The sign-in asks consent for the Graph scopes beside the mail ones, so the
+// later exchange of the same refresh token is not refused as a bad grant.
+assert.ok(microsoft.SIGN_IN_SCOPES.indexOf("https://outlook.office.com/IMAP.AccessAsUser.All") >= 0)
+assert.ok(microsoft.SIGN_IN_SCOPES.indexOf("https://graph.microsoft.com/Mail.Send") >= 0)
+assert.ok(microsoft.deviceAuthorizationBody(clientId, microsoft.SIGN_IN_SCOPES).indexOf("Mail.Send") >= 0)

@@ -33,6 +33,12 @@ var GRAPH_SCOPES = [
 // outright. Anything that is not one of those spellings is the consumer
 // tenant, so a stored value cannot steer the sign-in to another host: the
 // tenant is one path segment of a fixed URL, never a URL of its own.
+// What the sign-in asks consent for: the mail scopes the token is issued
+// for, and the Graph scopes the same refresh token is later exchanged for.
+// Consent is collected once, here; a Graph exchange for a scope nobody
+// consented to is refused by Microsoft as a bad grant, not asked about.
+var SIGN_IN_SCOPES = SCOPES.concat(GRAPH_SCOPES)
+
 function normalizeTenant(value) {
   var text = trimmed(value).toLowerCase()
   if (text === "" || text === "consumers") return "consumers"
@@ -142,8 +148,8 @@ function calendarScopeMessage() {
 }
 
 function graphScopeMessage() {
-  return "Microsoft did not grant the Mail.Send permission for Microsoft Graph. "
-    + "Add it to the app registration, then sign in again"
+  return "This sign-in has not granted the Mail.Send permission for Microsoft Graph. "
+    + "Sign in again to grant it; if that does not help, add it to the app registration"
 }
 
 function parseJson(text) {

@@ -34,7 +34,7 @@ Item {
   // Microsoft grants this token for its own mail service. Persisted generic
   // IMAP settings must never select its destination or disable transport TLS.
   readonly property var settings: Outlook.settings(configuredEmail, tenant, configuredSend)
-  property var scopes: Microsoft.SCOPES
+  property var scopes: Microsoft.SIGN_IN_SCOPES
 
   readonly property string authMode: "oauth2"
   readonly property bool configured: Imap.validateSettings(settings).ok
