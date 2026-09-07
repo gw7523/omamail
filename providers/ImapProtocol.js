@@ -241,8 +241,23 @@ function normalizeSettings(raw) {
     // Loopback only. A plaintext session to anywhere else is a password on the
     // wire, and the one legitimate case — a local bridge — never leaves the
     // machine.
-    insecure: values.insecure === true && isLoopback(values.imapHost)
+    insecure: values.insecure === true && isLoopback(values.imapHost),
+    send: normalizeSend(values.send)
   }
+}
+
+// How a message leaves: SMTP, or Microsoft Graph's sendMail for a Microsoft
+// 365 tenant that has switched authenticated SMTP off. Graph takes the same
+// MIME the SMTP path builds and files the sent copy itself. Empty or missing
+// is SMTP, which is what every mailbox already on disk means.
+var GRAPH_SEND_URL = "https://graph.microsoft.com/v1.0/me/sendMail"
+
+function normalizeSend(value) {
+  return trimmed(value).toLowerCase() === "graph" ? "graph" : ""
+}
+
+function sendsViaGraph(raw) {
+  return normalizeSend((raw || {}).send) === "graph"
 }
 
 function isLoopback(host) {
@@ -263,7 +278,8 @@ function setupSettings(raw) {
     smtpPort: values.smtpPort,
     username: trimmed(values.username) || trimmed(values.address),
     aliases: values.aliases,
-    insecure: isLoopback(values.imapHost)
+    insecure: isLoopback(values.imapHost),
+    send: values.send
   })
 }
 

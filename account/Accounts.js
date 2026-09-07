@@ -113,7 +113,11 @@ function makeImapSettings(raw) {
     smtpPort: portOr(values.smtpPort, 465),
     username: trimmed(values.username),
     aliases: Aliases.parse(values.aliases),
-    insecure: values.insecure === true
+    insecure: values.insecure === true,
+    // An Outlook mailbox's tenant and how it sends; neither is a secret and
+    // both are empty for every other kind of mailbox.
+    tenant: trimmed(values.tenant),
+    send: trimmed(values.send)
   }
 }
 
