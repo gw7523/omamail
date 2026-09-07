@@ -201,6 +201,7 @@ Item {
           HoverHandler { id: rowHover }
 
           TapHandler {
+            gesturePolicy: TapHandler.ReleaseWithinBounds
             onTapped: {
               root.cursorIndex = labelRow.index
               root.chooseCursor()
