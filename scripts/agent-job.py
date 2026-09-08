@@ -146,6 +146,10 @@ def command_new():
     # A look for calendar events in the message: a message job with its own
     # rules and a fixed answer shape, started by the window on its own.
     events = payload.get("events") is True
+    # A build of the label profile: not an agent at all but the same runner,
+    # so it is a unit, a row in the pane, a progress line and a cancel. The
+    # message file carries the spec the build reads.
+    labels = payload.get("labels") is True
     parent_id = safe_id(payload.get("parent") or "")
     messages = payload.get("messages")
     messages = [m for m in messages if isinstance(m, dict)] if isinstance(messages, list) else []
@@ -163,7 +167,7 @@ def command_new():
     # window matches a job to a row by, because two accounts can hold the
     # same message id and two providers the same address.
     account_id = clean_text(payload.get("accountId")).strip()
-    if command == "" or prompt == "" or (message_id == "" and scope == "" and not messages and draft is None and parent is None):
+    if command == "" or prompt == "" or (message_id == "" and scope == "" and not messages and draft is None and parent is None and not labels):
         sys.stderr.write("agent-job.py new: command, prompt and a messageId, messages, a scope or a draft are required\n")
         return 2
 
@@ -241,6 +245,10 @@ def command_new():
             handle.write(read_output(os.path.join(state_dir(), parent_id)).strip())
             handle.write("\n--- End of your answer ---\n\n")
             handle.write("The owner's answer, and what to do now:\n%s\n" % prompt)
+        elif labels:
+            # Nothing reads this prompt but the owner: the build takes its
+            # spec from the message file, which the runner names to it.
+            handle.write("Build the label profile of %s from its archive.\n" % account)
         elif events and message_id != "":
             # The ask stands above the message, and every line of the
             # message is prefixed: a line without the prefix is not the
@@ -285,7 +293,7 @@ def command_new():
         # A look for events has its ask above the message, and nothing after
         # it: a line after the fence would be the one place a message could
         # pretend to be the owner.
-        if parent is None and not (events and message_id != ""):
+        if parent is None and not (events and message_id != "") and not labels:
             handle.write("The ask:\n%s\n" % prompt)
 
     now = int(time.time())
@@ -296,7 +304,7 @@ def command_new():
         "messageIds": message_ids or parent_message_ids,
         "scope": scope,
         "kind": clean_text(parent.get("kind")).strip() if parent is not None
-        else ("events" if events and message_id != "" else "draft" if draft is not None
+        else ("labels" if labels else "events" if events and message_id != "" else "draft" if draft is not None
               else ("message" if (message_id or message_ids) else "scope")),
         "parent": parent_id,
         "accountId": account_id,
@@ -324,7 +332,7 @@ def command_new():
         started = subprocess.run([
             "systemd-run", "--user", "--quiet", "--collect",
             "--unit", job["unit"],
-            "--description", "Omamail agent on a message",
+            "--description", "Omamail label profile build" if labels else "Omamail agent on a message",
             "--property", "KillMode=control-group",
             "--property", "TimeoutStopSec=10",
             sys.executable, here, "run", directory,

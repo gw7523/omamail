@@ -171,6 +171,84 @@ Item {
       tryCompare(picker, "opened", false)
     }
 
+    // With the setting on, the picker leads with what the brain suggests
+    // for the row, and a choice made there teaches it; a ticked batch gets
+    // no suggestions, and a message leaving its label is counted.
+    function test_suggestions_lead_the_picker_and_a_choice_teaches_the_brain() {
+      var account = seed()
+      mailService.labelDataHome = "/tmp/omamail-qml-test-labels"
+      mailService.forgetLabelBrain("imap:ada@example.com")
+      var picker = named(app, "label-picker")
+      compare(mailService.labelSuggestionsFor("1:INBOX"), [], "off, the brain says nothing")
+      mailService.setSuggestLabels(true)
+      tryCompare(mailService, "suggestLabels", true)
+      compare(mailService.labelSuggestionsFor("1:INBOX"), [], "on but knowing nothing, still nothing")
+      // A choice, as the picker reports one that was not a suggestion.
+      mailService.noteLabelChoice(["1:INBOX"], "Receipts", false)
+      compare(mailService.labelBrainStatus.docs, 1)
+      var got = mailService.labelSuggestionsFor("2:INBOX")
+      compare(got.length, 1, "the same sender now names the label")
+      compare(got[0].id, "Receipts")
+      app.cursorId = "2:INBOX"
+      app.runShortcut("moveToLabel", "v")
+      tryCompare(picker, "opened", true)
+      compare(picker.matchingLabels[0].id, "Receipts")
+      compare(picker.matchingLabels[0].suggested, true, "and the picker leads with it")
+      keyClick(Qt.Key_Return)
+      tryCompare(picker, "opened", false)
+      tryVerify(function() { return record.modified.length === 1 }, 1000)
+      compare(record.modified[0].indexOf("2:INBOX +Receipts"), 0, record.modified[0])
+      compare(mailService.labelBrainStatus.docs, 2, "the choice was learnt")
+      // Ticked rows: the picker opens plain.
+      verify(app.toggleCheck("1:INBOX"))
+      app.runShortcut("moveToLabel", "v")
+      tryCompare(picker, "opened", true)
+      compare(picker.suggestions.length, 0, "a batch gets no suggestions")
+      keyClick(Qt.Key_Escape)
+      tryCompare(picker, "opened", false)
+      app.checkedIds = []
+      // A message thrown away from inside a label counts as leaving it,
+      // one per message when several go together; on a provider that
+      // files by folder, archiving is leaving too.
+      account.rawLabelId = "Receipts"
+      verify(mailService.act("1:INBOX", "trash"))
+      compare(mailService.labelBrainStatus.movedSince, 1)
+      verify(mailService.act("2:INBOX", "label:Receipts"))
+      compare(mailService.labelBrainStatus.movedSince, 1, "a move to the label on screen is not a departure")
+      verify(mailService.act("2:INBOX", "read"))
+      compare(mailService.labelBrainStatus.movedSince, 1, "nor is marking it read")
+      account.messages = [row("1:INBOX"), row("2:INBOX")]
+      verify(mailService.actMany(["1:INBOX", "2:INBOX", "9:INBOX"], "trash"))
+      compare(mailService.labelBrainStatus.movedSince, 3, "a batch counts each of its listed rows, and not a tick on a row that is gone")
+      compare(mailService.hasLabels, false, "an IMAP mailbox files by folder")
+      mailService.noteLabelDeparture("archive", 1)
+      compare(mailService.labelBrainStatus.movedSince, 4, "archiving out of a folder is leaving it")
+      mailService.noteLabelDeparture("spam", 2)
+      compare(mailService.labelBrainStatus.movedSince, 6, "and so is marking as spam, one per row")
+      account.rawLabelId = ""
+      account.messages = [row("1:INBOX"), row("2:INBOX")]
+      verify(mailService.act("2:INBOX", "trash"))
+      compare(mailService.labelBrainStatus.movedSince, 6, "nothing leaves a label that is not on screen")
+      // Read before the move and learnt after it: the lesson is a value the
+      // window holds across the act, and nothing is learnt until it says so.
+      account.messages = [row("1:INBOX"), row("2:INBOX")]
+      var docsBefore = mailService.labelBrainStatus.docs
+      var lesson = mailService.prepareLabelChoice(["1:INBOX"], "Work", false)
+      verify(lesson !== null, "a listed row has a lesson")
+      compare(lesson.features.from, ["x@example.com"], "and it is the row's tokens, read now")
+      compare(mailService.prepareLabelChoice(["9:INBOX"], "Work", false), null, "a row that is not listed has none")
+      compare(mailService.prepareLabelChoice(["1:INBOX", "2:INBOX"], "Work", false), null, "a batch has none")
+      compare(mailService.prepareLabelChoice([], "Work", false), null, "nor does nothing")
+      compare(mailService.labelBrainStatus.docs, docsBefore, "preparing teaches nothing")
+      mailService.learnLabelChoice(lesson)
+      compare(mailService.labelBrainStatus.docs, docsBefore + 1, "learning does")
+      mailService.learnLabelChoice(null)
+      compare(mailService.labelBrainStatus.docs, docsBefore + 1, "and nothing is nothing")
+      mailService.setSuggestLabels(false)
+      compare(mailService.prepareLabelChoice(["1:INBOX"], "Work", false), null, "off, there is no lesson")
+      mailService.forgetLabelBrain("imap:ada@example.com")
+    }
+
     function test_the_readers_button_opens_the_picker_for_the_open_message() {
       var account = seed()
       account.selectedId = "2:INBOX"

@@ -410,6 +410,47 @@ function labelChangesFor(action, sourceLabelId) {
 // under its parent, each row saying how deep it sits so the picker can step
 // it in. Typed, the best matches first, flat — the letters name the label,
 // not its place. The label the list is already in is left out either way.
+// The picker's rows: what the brain suggests for the message first, then
+// the labels as `movableLabels` orders them, less the ones already
+// suggested. Typing narrows both: a suggestion stays on top while the
+// letters still name it and drops off when they do not, so a suggestion
+// is never a row the typed letters contradict. Each row says which group
+// it is in, and the first of each group carries the heading the picker
+// draws above it — on the row rather than as a list section, so a heading
+// can never outlive the rows it headed.
+function pickerRows(suggestions, labels, query, currentLabelId) {
+  var typed = String(query || "").trim()
+  var current = String(currentLabelId || "")
+  var top = []
+  var seen = {}
+  var list = Array.isArray(suggestions) ? suggestions : []
+  for (var i = 0; i < list.length && top.length < 3; i++) {
+    var suggestion = list[i]
+    var id = suggestion ? String(suggestion.id || "") : ""
+    if (id === "" || id === current || seen[id] === true) continue
+    var name = String(suggestion.name || id)
+    if (typed !== "" && fuzzyScore(typed, name) <= 0) continue
+    seen[id] = true
+    var because = Array.isArray(suggestion.because) ? suggestion.because.slice(0, 2) : []
+    top.push({ id: id, name: name, leaf: name, depth: 0, suggested: true, group: "Suggested",
+      heading: top.length === 0 ? "Suggested" : "", because: because, reason: because.join(" \u00b7 ") })
+  }
+  var rest = movableLabels(labels, typed, current)
+  var suggested = top.length
+  var out = top
+  for (var r = 0; r < rest.length; r++) {
+    if (seen[String(rest[r].id || "")] === true) continue
+    var row = rest[r]
+    row.suggested = false
+    row.group = suggested > 0 ? "All labels" : ""
+    row.heading = suggested > 0 && out.length === suggested ? "All labels" : ""
+    row.because = []
+    row.reason = ""
+    out.push(row)
+  }
+  return out
+}
+
 function movableLabels(labels, query, currentLabelId) {
   var candidates = Array.isArray(labels) ? labels : []
   var typed = String(query || "").trim()

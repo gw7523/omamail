@@ -11,5 +11,9 @@ Item {
   signal started()
   signal exited(int exitCode)
 
+  // Signals sent to the process, for a test to see; the stub does not exit
+  // for them, a test says when it did.
+  property var signalled: []
   function write(value) { written += String(value || "") }
+  function signal(number) { signalled = signalled.concat([Number(number)]) }
 }

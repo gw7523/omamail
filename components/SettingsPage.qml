@@ -1237,6 +1237,194 @@ Column {
     }
   }
 
+  // Which labels a message looks like, offered at the top of the move-to
+  // picker. The counts come from a one-off read of the archive through
+  // himalaya, run as a job like the agent's, and from every choice made in
+  // the picker after; they stay in the owner's data directory. Off until it
+  // is turned on, because on, every move writes a file.
+  Column {
+    objectName: "settings-labels-section"
+    width: parent.width
+    spacing: Style.space(6)
+    visible: root.signatureAccounts.length > 0
+
+    readonly property var status: root.service ? root.service.labelBrainStatus : null
+    readonly property var job: root.service ? root.service.labelBrainJob : null
+    readonly property bool building: !!root.service && root.service.labelBrainBuilding
+    readonly property string mailboxId: root.service ? root.service.labelBrainAccountId : ""
+    readonly property string builtOn: status && status.built > 0
+      ? Qt.formatDateTime(new Date(status.built * 1000), "d MMM yyyy") : ""
+
+    Item {
+      objectName: "settings-suggest-labels"
+      width: parent.width
+      implicitHeight: suggestLabelsText.implicitHeight + Style.space(12)
+
+      Column {
+        id: suggestLabelsText
+        anchors.left: parent.left
+        anchors.right: suggestLabelsState.left
+        anchors.rightMargin: Style.space(10)
+        anchors.verticalCenter: parent.verticalCenter
+        spacing: Style.space(2)
+
+        Text {
+          width: parent.width
+          text: "Suggest labels from the archive"
+          color: root.textColor
+          font.family: root.panelFontFamily
+          font.pixelSize: Style.font.bodySmall
+          textFormat: Text.PlainText
+        }
+
+        Text {
+          width: parent.width
+          text: "The move-to picker leads with up to three labels the message "
+            + "looks like, judged by who sent it and the words in it against "
+            + "what each label already holds, and says why. Each choice you "
+            + "make there is added to the counts. The counts are a file under "
+            + "~/.local/share/omamail/labels, readable by you alone; nothing "
+            + "leaves this machine."
+          color: root.dimColor
+          font.family: root.panelFontFamily
+          font.pixelSize: Style.font.caption
+          wrapMode: Text.WordWrap
+          textFormat: Text.PlainText
+        }
+      }
+
+      Text {
+        id: suggestLabelsState
+        objectName: "suggestLabelsState"
+        anchors.right: suggestLabelsSwitch.left
+        anchors.rightMargin: Style.space(8)
+        anchors.verticalCenter: parent.verticalCenter
+        text: suggestLabelsSwitch.checked ? "On" : "Off"
+        color: root.dimColor
+        font.family: root.panelFontFamily
+        font.pixelSize: Style.font.caption
+      }
+
+      ToggleSwitch {
+        id: suggestLabelsSwitch
+        objectName: "suggestLabelsSwitch"
+        anchors.right: parent.right
+        anchors.rightMargin: Style.space(10)
+        anchors.verticalCenter: parent.verticalCenter
+        checked: !!root.service && root.service.suggestLabels === true
+        foreground: root.textColor
+        accent: root.accentColor
+        onToggled: if (root.service) root.service.setSuggestLabels(!root.service.suggestLabels)
+      }
+    }
+
+    Dropdown {
+      objectName: "settings-labels-account-picker"
+      visible: root.signatureAccounts.length > 1
+      width: parent.width
+      showLabel: false
+      value: parent.mailboxId
+      options: root.signatureOptions()
+      foreground: root.textColor
+      accent: root.accentColor
+      fontFamily: root.panelFontFamily
+      onChanged: function(next) { if (root.service) root.service.labelSettingsAccountId = String(next || "") }
+    }
+
+    // What the profile holds, or how the build is going: one line, read
+    // from the file for a finished profile and from the job while it runs.
+    Text {
+      objectName: "settings-labels-status"
+      width: parent.width
+      textFormat: Text.PlainText
+      readonly property var status: parent.status
+      readonly property var job: parent.job
+      text: {
+        if (parent.building) return "Building" + (job && String(job.progress || "") !== "" ? ": " + String(job.progress) : "...")
+        if (job && String(job.state || "") === "failed") return "The last build failed" + (String(job.error || "") !== "" ? ": " + String(job.error) : "")
+        if (!status) return ""
+        if (status.built > 0) return "Built on " + parent.builtOn + " from " + status.docs + " messages under "
+          + status.labels + (status.labels === 1 ? " label" : " labels")
+          + (status.movedSince > 0 ? "; " + status.movedSince + " moved out of their labels since" : "")
+        if (status.docs > 0) return "Learning from your choices alone so far: " + status.docs
+          + (status.docs === 1 ? " message" : " messages") + ". Build from the archive to know more."
+        return "Not built yet"
+      }
+      color: root.dimColor
+      font.family: root.panelFontFamily
+      font.pixelSize: Style.font.caption
+      wrapMode: Text.WordWrap
+    }
+
+    Text {
+      objectName: "settings-labels-rebuild-note"
+      width: parent.width
+      visible: !!parent.status && parent.status.recommended === true && !parent.building
+      textFormat: Text.PlainText
+      text: "Rebuild recommended: enough messages have moved out of their labels "
+        + "since the build that the counts are behind."
+      color: root.textColor
+      font.family: root.panelFontFamily
+      font.pixelSize: Style.font.caption
+      wrapMode: Text.WordWrap
+    }
+
+    Row {
+      width: parent.width
+      spacing: Style.space(8)
+
+      Button {
+        objectName: "settings-labels-build"
+        text: parent.parent.building ? "Building" : (parent.parent.status && parent.parent.status.built > 0 ? "Rebuild" : "Build now")
+        tooltipText: "Reads every message under every label of this mailbox once, in the background, through himalaya"
+        foreground: root.textColor
+        bordered: true
+        accent: root.accentColor
+        fontFamily: root.panelFontFamily
+        fontSize: Style.font.caption
+        enabled: !!root.service && !parent.parent.building && parent.parent.mailboxId !== ""
+        onClicked: if (root.service) root.service.buildLabelBrain(parent.parent.mailboxId)
+      }
+
+      Button {
+        objectName: "settings-labels-cancel"
+        visible: parent.parent.building
+        text: "Cancel"
+        foreground: root.dimColor
+        bordered: false
+        fontFamily: root.panelFontFamily
+        fontSize: Style.font.caption
+        onClicked: if (root.service) root.service.cancelLabelBrain(parent.parent.mailboxId)
+      }
+
+      Button {
+        objectName: "settings-labels-forget"
+        visible: !!parent.parent.status && (parent.parent.status.built > 0 || parent.parent.status.docs > 0) && !parent.parent.building
+        text: "Forget"
+        tooltipText: "Deletes the counts for this mailbox"
+        foreground: root.dimColor
+        bordered: false
+        fontFamily: root.panelFontFamily
+        fontSize: Style.font.caption
+        onClicked: if (root.service) root.service.forgetLabelBrain(parent.parent.mailboxId)
+      }
+    }
+
+    Text {
+      width: parent.width
+      textFormat: Text.PlainText
+      text: "The build reads the newest 2000 messages under each label for who "
+        + "sent them and to whom, and the newest 150 of those for the words in "
+        + "them, through the himalaya account with this mailbox's address. It "
+        + "runs as a background job, listed in the agent pane, and can be "
+        + "cancelled there or here."
+      color: root.dimColor
+      font.family: root.panelFontFamily
+      font.pixelSize: Style.font.caption
+      wrapMode: Text.WordWrap
+    }
+  }
+
   Column {
     width: parent.width
     spacing: Style.space(2)

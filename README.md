@@ -29,6 +29,13 @@ Works with **Gmail**, **HEY**, **Fastmail**, **iCloud Mail**, **Outlook**, **Yah
   which is which — `Alt+A` to switch account, `/` to search, `?` for the rest.
   A key the mailbox has no verb for says so instead of pretending: HEY has
   neither an archive nor a star, so `e` and `s` name what is missing.
+- **Labels that suggest themselves.** With **Suggest labels from the archive**
+  on, the move-to picker leads with up to three labels the message looks like
+  — judged by who sent it, to whom, and the words in it, against counts of
+  what each label already holds — and says why. The counts come from a one-off
+  read of the archive through himalaya, run in the background, and from every
+  choice made in the picker after; they are a file in your data directory and
+  nothing leaves the machine.
 - **Always counting.** The unread badge keeps working while the window is shut,
   for every account, with a desktop notification when new mail lands.
 - **One window.** Read, archive, star, trash, search, and answer without a
@@ -253,6 +260,8 @@ Right-click does the rest. On a label in the rail: rename it, make a label besid
 To act on several messages, hold Ctrl to replace the row actions with checkboxes, or Ctrl+click a row to select or deselect it without opening it. Checkboxes stay visible while any message is selected; releasing Ctrl with no selection restores the usual actions. `Space` or `x` toggles the keyboard cursor's row. Shift+click selects the range from the cursor to an unchecked row, or clears that range when the clicked row is already checked; other selections stay as they are. In the list, `Ctrl+A` selects every loaded message or clears the selection, and `Esc` clears an active selection before going back. The status bar shows how many messages are selected; archive, trash, star, move and read/unread actions apply to that selection while the list is visible.
 
 Search paints matching cached rows first and adds server results as they arrive. It takes Gmail's own operator syntax straight through — `from:jane`, `has:attachment`, `older_than:7d`. The Unread mailbox leaves Promotions, Social and Forums out rather than asking for Primary: Gmail's categories do not remove the `INBOX` label, so an unread filter without that exclusion comes back as the whole promotional backlog rather than the mail you have not read — while one that asks for Primary comes back empty on any account where Gmail is not applying the category labels, which is unread mail with nothing left to say so. Updates stays in, because receipts, deliveries and notifications land there. Right-click any row in the list for archive, trash, spam, star and read/unread without leaving the keyboard cursor behind.
+
+Suggested labels are set per mailbox on the settings page, under Mailboxes: turn **Suggest labels from the archive** on and press **Build now**. The build reads the newest 2000 messages under each label for who sent them and to whom, and the newest 150 of those for their words, through the himalaya account with the mailbox's address; it runs as a background job you can cancel, and the settings page says how it is going. From then on `v`, the reader's Move to button and the row menu open the picker with up to three suggestions on top, each with its reason; Return takes the first. A choice you make for one message is added to the counts at once, twice over when it was not among the suggestions; a ticked batch teaches nothing. Messages moved out of their labels are counted, and after twenty-five the page recommends a rebuild; a label the rebuild cannot list keeps its counts from before. **Forget** deletes the counts.
 
 A signature is set per mailbox on the settings page, under Writing. It is placed under a new message and above the quoted text in a reply, so a sign-off stays next to the words it signs rather than stranded below a screen of somebody else's message. It is sent exactly as typed — no `-- ` line is added in front of it, because a client that adds one turns a signature into two decisions, and the line is one keystroke away for anybody who wants it. Each mailbox keeps its own: two addresses are two identities, and one sign-off under both is wrong for whichever it was not written for. A saved draft is reopened as it was written, so resuming one never signs it twice.
 

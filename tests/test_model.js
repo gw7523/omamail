@@ -1583,3 +1583,53 @@ assert.strictEqual(model.activityStatus({ sending: "x", waiting: -2 }), "", "non
 
   assert.strictEqual(model.switcherRows(null, null, null).length, 0)
 }
+
+// ------------------------------------------------------------ the picker's rows
+//
+// Suggestions lead the picker, headed as such, and the tree follows without
+// repeating them; typing keeps a suggestion only while the letters name it.
+{
+  const labels = [
+    { id: "Receipts", name: "Receipts" },
+    { id: "Travel", name: "Travel" },
+    { id: "Travel/Flights", name: "Travel/Flights" },
+    { id: "INBOX", name: "Inbox", system: true }]
+  const suggested = [
+    { id: "Travel", name: "Travel", because: ["noreply@delta.com", "“flight”", "third"] },
+    { id: "Receipts", name: "Receipts", because: [] },
+    { id: "Gone", name: "Gone" },
+    { id: "", name: "nameless" }]
+  const rows = model.pickerRows(suggested, labels, "", "")
+  assert.deepEqual(rows.map(r => r.id), ["Travel", "Receipts", "Gone", "Travel/Flights"],
+    "suggestions first, then the tree less the suggested")
+  assert.strictEqual(rows[0].suggested, true)
+  assert.strictEqual(rows[0].group, "Suggested")
+  assert.deepEqual(rows[0].because, ["noreply@delta.com", "“flight”"], "two reasons at most")
+  assert.strictEqual(rows[0].reason, "noreply@delta.com \u00b7 “flight”", "and as one line for the row")
+  assert.strictEqual(rows[0].heading, "Suggested", "the first suggestion carries its heading")
+  assert.strictEqual(rows[1].heading, "", "the second does not")
+  assert.strictEqual(rows[0].leaf, "Travel")
+  assert.strictEqual(rows[3].suggested, false)
+  assert.strictEqual(rows[3].group, "All labels")
+  assert.strictEqual(rows[3].heading, "All labels", "the first of the rest carries the other")
+  assert.strictEqual(rows[3].reason, "")
+  const more = model.pickerRows([{ id: "Receipts", name: "Receipts" }], labels, "", "")
+  assert.deepEqual(more.map(r => r.heading), ["Suggested", "All labels", ""], "one heading per group, on its first row alone")
+  assert.strictEqual(rows[3].leaf, "Flights", "the tree still draws its leaves")
+  assert.strictEqual(rows[3].depth, 1)
+
+  const typed = model.pickerRows(suggested, labels, "rec", "")
+  assert.deepEqual(typed.map(r => r.id), ["Receipts"], "letters that name only one suggestion leave it alone on top")
+  assert.strictEqual(typed[0].suggested, true)
+  const flights = model.pickerRows(suggested, labels, "fli", "")
+  assert.deepEqual(flights.map(r => r.id), ["Travel/Flights"], "and a suggestion the letters do not name drops off")
+  assert.strictEqual(flights[0].group, "", "no suggestion shown, no heading")
+  assert.strictEqual(flights[0].heading, "")
+
+  assert.deepEqual(model.pickerRows(suggested, labels, "", "Travel").map(r => r.id), ["Receipts", "Gone", "Travel/Flights"],
+    "the label on screen is neither suggested nor listed")
+  assert.deepEqual(model.pickerRows(null, labels, "", "").map(r => r.id), ["Receipts", "Travel", "Travel/Flights"])
+  assert.strictEqual(model.pickerRows(null, labels, "", "")[0].group, "", "no suggestions, no headings")
+  assert.strictEqual(model.pickerRows(null, labels, "", "")[0].heading, "")
+  assert.strictEqual(model.pickerRows([{ id: "A" }, { id: "B" }, { id: "C" }, { id: "D" }], [], "", "").length, 3, "three at most")
+}
