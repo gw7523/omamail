@@ -425,6 +425,11 @@ Item {
     // rather than stored — the row keeps the address it already answers to.
     if (named === "") return
 
+    // A profile may replace a configured alias with its canonical address,
+    // or identify this row as a duplicate. Only this row's old id is released;
+    // every other persisted mailbox must still survive the following save.
+    lastPersistedIds = Accounts.withoutId(lastPersistedIds, String(accounts[index].id || ""))
+
     // Two rows cannot hold one address. Rebuilding the list would fold them
     // together and take the row being added with it, which read as the add
     // silently undoing itself. A mailbox that is already here is a duplicate,
