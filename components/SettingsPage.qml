@@ -294,15 +294,17 @@ Column {
       }
     }
 
-    ToggleSwitch {
+    StateSwitch {
       id: barIconSwitch
-      objectName: "showBarIconSwitch"
+      switchName: "showBarIconSwitch"
       anchors.right: parent.right
       anchors.rightMargin: Style.space(10)
       anchors.verticalCenter: parent.verticalCenter
       checked: !root.service || root.service.showBarIcon !== false
       foreground: root.textColor
       accent: root.accentColor
+      fontFamily: root.panelFontFamily
+      wordColor: root.dimColor
       onToggled: if (root.service) root.service.setShowBarIcon(!root.service.showBarIcon)
     }
   }
@@ -355,7 +357,7 @@ Column {
       }
     }
 
-    ToggleSwitch {
+    StateSwitch {
       id: imagesSwitch
       anchors.right: parent.right
       anchors.rightMargin: Style.space(10)
@@ -363,6 +365,8 @@ Column {
       checked: !!root.service && root.service.alwaysShowImages
       foreground: root.textColor
       accent: root.accentColor
+      fontFamily: root.panelFontFamily
+      wordColor: root.dimColor
       onToggled: if (root.service) root.service.setAlwaysShowImages(!root.service.alwaysShowImages)
     }
   }
@@ -408,15 +412,17 @@ Column {
       }
     }
 
-    ToggleSwitch {
+    StateSwitch {
       id: previewSwitch
-      objectName: "previewOnCursorSwitch"
+      switchName: "previewOnCursorSwitch"
       anchors.right: parent.right
       anchors.rightMargin: Style.space(10)
       anchors.verticalCenter: parent.verticalCenter
       checked: !!root.service && root.service.previewOnCursor
       foreground: root.textColor
       accent: root.accentColor
+      fontFamily: root.panelFontFamily
+      wordColor: root.dimColor
       onToggled: if (root.service)
         root.service.setPreviewOnCursor(!root.service.previewOnCursor)
     }
@@ -561,7 +567,7 @@ Column {
       }
     }
 
-    ToggleSwitch {
+    StateSwitch {
       id: heavySwitch
       anchors.right: parent.right
       anchors.rightMargin: Style.space(10)
@@ -569,6 +575,8 @@ Column {
       checked: !!root.service && root.service.alwaysRenderHeavyMessages
       foreground: root.textColor
       accent: root.accentColor
+      fontFamily: root.panelFontFamily
+      wordColor: root.dimColor
       onToggled: if (root.service)
         root.service.setAlwaysRenderHeavyMessages(!root.service.alwaysRenderHeavyMessages)
     }
@@ -687,7 +695,7 @@ Column {
       }
     }
 
-    ToggleSwitch {
+    StateSwitch {
       id: notifySwitch
       anchors.right: parent.right
       anchors.rightMargin: Style.space(10)
@@ -695,6 +703,8 @@ Column {
       checked: !!root.service && root.service.notifyNewMail
       foreground: root.textColor
       accent: root.accentColor
+      fontFamily: root.panelFontFamily
+      wordColor: root.dimColor
       onToggled: if (root.service)
         root.service.setNotifyNewMail(!root.service.notifyNewMail)
     }
