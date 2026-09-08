@@ -501,7 +501,11 @@ Item {
     var id = Accounts.accountId(entry.email, entry.provider)
     if (id !== "" && activeIndex === index)
       updated = Accounts.setActive(updated, id)
-    if (activeIndex === index) activeIndex = -1
+    // A draft is addressed by its position until it has an id: a change that
+    // gives it none — a name typed before the address — must not let go of
+    // the position, or `current` falls back to whatever mailbox was active
+    // before and the setup page turns into that mailbox's.
+    if (activeIndex === index && id !== "") activeIndex = -1
     // An address corrected on this row is a new id for the same mailbox, so
     // the old one is released from the persisted set on purpose: the write
     // guard would otherwise read its absence as a mailbox dropped by mistake
@@ -1055,6 +1059,15 @@ Item {
     }
     return Senders.identities(mailboxes)
   }
+  // The name the entry being edited was given, or "" for none: what the
+  // setup page's name field shows. `accountLabel` cannot say, because it
+  // falls through to the address's local part.
+  readonly property string accountName: {
+    var accounts = accountList ? accountList.accounts : []
+    var index = editingIndex()
+    return index >= 0 && index < accounts.length ? String(accounts[index].label || "") : ""
+  }
+
   readonly property string accountAddress: {
     var accounts = accountList ? accountList.accounts : []
     var index = editingIndex()
