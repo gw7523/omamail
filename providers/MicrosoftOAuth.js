@@ -33,13 +33,15 @@ var GRAPH_SCOPES = [
 // outright. Anything that is not one of those spellings is the consumer
 // tenant, so a stored value cannot steer the sign-in to another host: the
 // tenant is one path segment of a fixed URL, never a URL of its own.
-// What the sign-in asks consent for: the mail scopes the token is issued
-// for, and the Graph scopes the same refresh token is later exchanged for.
-// Consent is collected once, here; a Graph exchange for a scope nobody
-// consented to is refused by Microsoft as a bad grant, not asked about.
-// Only the device-code request may name both resources: every token
-// request after it — the refresh, the Graph exchange — names one.
-var SIGN_IN_SCOPES = SCOPES.concat(GRAPH_SCOPES)
+// Every request names one resource, the device-code request that starts a
+// sign-in included: Microsoft refuses two in one (AADSTS28000). So consent
+// for Graph is a sign-in of its own — a second code — asked for only when
+// the exchange of the refresh token for Graph is refused for want of it:
+// straight after the mail sign-in where the tenant sends through Graph,
+// else from the mailbox's settings when the calendar's exchange is refused.
+// Consent is per user and client, not per token: once given, either
+// sign-in's refresh token exchanges for either resource.
+var GRAPH_SIGN_IN_SCOPES = ["offline_access"].concat(GRAPH_SCOPES)
 
 function normalizeTenant(value) {
   var text = trimmed(value).toLowerCase()
@@ -216,6 +218,7 @@ function parseTokenResponse(status, text, previousRefreshToken) {
       ok: false,
       pending: false,
       invalidGrant: code === "invalid_grant",
+      consentRequired: consentRequired(payload),
       error: errorMessage(payload, "Could not complete Microsoft sign-in. Please try again")
     }
   }
@@ -226,6 +229,25 @@ function parseTokenResponse(status, text, previousRefreshToken) {
     expiresIn: Math.max(60, Number(payload.expires_in) || 3600),
     scope: String(payload.scope || "")
   }
+}
+
+// Microsoft's answer to an exchange for a resource the user has not
+// consented this client to: a bad grant that a sign-in can mend, told apart
+// from one that cannot — a revoked or expired session — by its sub-error or
+// its code (AADSTS65001).
+function consentRequired(payload) {
+  if (!payload || typeof payload !== "object") return false
+  var code = String(payload.error || "")
+  if (code !== "invalid_grant" && code !== "interaction_required") return false
+  if (String(payload.suberror || "") === "consent_required") return true
+  var codes = Array.isArray(payload.error_codes) ? payload.error_codes : []
+  for (var i = 0; i < codes.length; i++) if (Number(codes[i]) === 65001) return true
+  return /AADSTS65001/.test(String(payload.error_description || ""))
+}
+
+function graphConsentMessage() {
+  return "Microsoft Graph needs its own consent for this mailbox. "
+    + "Open the mailbox's settings and press Allow Microsoft Graph"
 }
 
 function missingMailScopes(granted) {

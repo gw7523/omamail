@@ -34,7 +34,16 @@ Item {
   // Microsoft grants this token for its own mail service. Persisted generic
   // IMAP settings must never select its destination or disable transport TLS.
   readonly property var settings: Outlook.settings(configuredEmail, tenant, configuredSend)
-  property var scopes: Microsoft.SIGN_IN_SCOPES
+  property var scopes: Microsoft.SCOPES
+  // What the code on screen is for: the mail sign-in, or the second one
+  // that allows Microsoft Graph. A Graph exchange refused for want of consent
+  // sets `graphConsentNeeded`, and the next sign-in is the Graph one —
+  // offered on the setup page while the mail session stands. The Graph
+  // sign-in that follows a mail sign-in, for a tenant that sends through
+  // Graph, holds `loginSucceeded` until it is answered.
+  property string devicePurpose: "mail"
+  property bool graphConsentNeeded: false
+  property bool graphRoundOfSignIn: false
 
   readonly property string authMode: "oauth2"
   readonly property bool configured: Imap.validateSettings(settings).ok
@@ -107,6 +116,7 @@ Item {
     loggedIn = false
     graphAccessToken = ""
     graphAccessTokenExpiresAt = 0
+    graphConsentNeeded = false
   }
 
   // ------------------------------------------------------------- Graph
@@ -194,19 +204,87 @@ Item {
         var result = Microsoft.parseTokenResponse(status, text, refreshToken)
         refreshToken = ""
         if (!result.ok) {
-          root.finishGraphWaiters("", root.safeError(result.invalidGrant
-            ? Microsoft.graphScopeMessage() : result.error))
+          // For want of consent is the one refusal a sign-in mends; the
+          // setup page offers it while this is set.
+          if (result.consentRequired) root.graphConsentNeeded = true
+          root.finishGraphWaiters("", root.safeError(result.consentRequired
+            ? Microsoft.graphConsentMessage()
+            : (result.invalidGrant ? Microsoft.graphScopeMessage() : result.error)))
           return
         }
         if (Microsoft.missingGraphScope(result.scope)) {
           root.finishGraphWaiters("", Microsoft.graphScopeMessage())
           return
         }
-        root.graphAccessToken = result.accessToken
-        root.graphAccessTokenExpiresAt = Date.now() + result.expiresIn * 1000
-        if (result.refreshToken) root.storeRefreshToken(result.refreshToken)
-        root.finishGraphWaiters(root.graphAccessToken, "")
+        root.acceptGraphToken(result)
       })
+  }
+
+  function acceptGraphToken(result) {
+    graphConsentNeeded = false
+    graphAccessToken = result.accessToken
+    graphAccessTokenExpiresAt = Date.now() + result.expiresIn * 1000
+    if (result.refreshToken) storeRefreshToken(result.refreshToken)
+    finishGraphWaiters(graphAccessToken, "")
+  }
+
+  // Whether this client is consented for Graph is found out with the
+  // refresh token in hand, straight after the mail sign-in of a tenant that
+  // sends through Graph, and mended by a second code where it is not —
+  // rather than at the first send. Any other refusal is sending's to
+  // report: the mailbox is signed in.
+  function probeGraphConsent(refreshToken) {
+    var context = sessionContext()
+    postForm(Microsoft.tokenUrlFor(tenant),
+      Microsoft.graphRefreshBody(clientId, refreshToken),
+      function(status, text) {
+        if (!root.isCurrent(context) || !root.sessionEnabled) return
+        var result = Microsoft.parseTokenResponse(status, text, refreshToken)
+        refreshToken = ""
+        if (!result.ok && result.consentRequired) {
+          root.graphConsentNeeded = true
+          root.graphRoundOfSignIn = true
+          root.startDeviceFlow("graph")
+          return
+        }
+        if (result.ok && !Microsoft.missingGraphScope(result.scope)) {
+          root.acceptGraphToken(result)
+        } else {
+          root.lastError = root.safeError(result.ok ? Microsoft.graphScopeMessage() : result.error)
+          root.finishGraphWaiters("", root.lastError)
+        }
+        root.loginBusy = false
+        root.loginSucceeded()
+      })
+  }
+
+  // The Graph sign-in answered: a token of Graph's audience, and a refresh
+  // token consented for both resources, kept in place of the mail one —
+  // the same user's and client's, and exchangeable for either.
+  function acceptGraphSignIn(result) {
+    if (Microsoft.missingGraphScope(result.scope)) {
+      failGraphRound(Microsoft.graphScopeMessage())
+      return
+    }
+    cancelDeviceLogin()
+    loginBusy = false
+    lastError = ""
+    acceptGraphToken(result)
+    var afterSignIn = graphRoundOfSignIn
+    graphRoundOfSignIn = false
+    if (afterSignIn) loginSucceeded()
+  }
+
+  // The Graph sign-in failing leaves the mail one as it was: the account is
+  // not told its session is gone, only what Graph will say when asked.
+  function failGraphRound(reason) {
+    lastError = safeError(reason || "Microsoft sign-in failed. Please try again")
+    loginBusy = false
+    cancelDeviceLogin()
+    finishGraphWaiters("", lastError)
+    var afterSignIn = graphRoundOfSignIn
+    graphRoundOfSignIn = false
+    if (afterSignIn) loginSucceeded()
   }
 
   function invalidateAccessToken() {
@@ -430,13 +508,24 @@ Item {
       lastError = "Missing " + missingTools.join(", ")
       return
     }
+    // Signed in for mail and refused Graph for want of consent: the code
+    // asked for is Graph's, and the mail session stands.
+    var forGraph = graphConsentNeeded && (loggedIn || savedSessionPresent)
     cancelLogin()
     sessionEnabled = true
-    var context = sessionContext()
     lastError = ""
     loginBusy = true
+    startDeviceFlow(forGraph ? "graph" : "mail")
+  }
+
+  // One device-code round: the code and the page to enter it on, then the
+  // poll until Microsoft answers with a token or a refusal.
+  function startDeviceFlow(purpose) {
+    var context = sessionContext()
+    devicePurpose = purpose
     postForm(Microsoft.deviceUrlFor(tenant),
-      Microsoft.deviceAuthorizationBody(clientId, scopes),
+      Microsoft.deviceAuthorizationBody(clientId,
+        purpose === "graph" ? Microsoft.GRAPH_SIGN_IN_SCOPES : scopes),
       function(status, text) {
         if (!root.isCurrent(context)) return
         var result = Microsoft.parseDeviceResponse(status, text)
@@ -477,6 +566,10 @@ Item {
           root.failLogin(result.error)
           return
         }
+        if (root.devicePurpose === "graph") {
+          root.acceptGraphSignIn(result)
+          return
+        }
         var missing = Microsoft.missingMailScopes(result.scope)
         if (missing.length > 0) {
           root.failLogin(Microsoft.missingScopeMessage(missing))
@@ -507,11 +600,16 @@ Item {
       expiresIn: pendingExpiresIn
     })
     clearPendingToken()
-    loginBusy = false
     sessionChecked = true
     acceptToken(result)
     finishWaiters(accessToken, "")
+    if (configuredSend === "graph") {
+      probeGraphConsent(result.refreshToken)
+      return
+    }
+    loginBusy = false
     loginSucceeded()
+    if (graphWaiters.length > 0) startGraphLookup()
   }
 
   function clearPendingToken() {
@@ -526,10 +624,15 @@ Item {
     userCode = ""
     verificationUri = ""
     deviceExpiresAt = 0
+    devicePurpose = "mail"
     clearPendingToken()
   }
 
   function failLogin(reason) {
+    if (devicePurpose === "graph") {
+      failGraphRound(reason)
+      return
+    }
     lastError = safeError(reason || "Microsoft sign-in failed. Please try again")
     loginBusy = false
     cancelDeviceLogin()
@@ -544,6 +647,11 @@ Item {
     if (oldLookup) oldLookup.running = false
     restoreQueued = false
     refreshRetry.stop()
+    // A Graph round cut short: its waiters are told, and where it was the
+    // tail of a sign-in, the mail half of that sign-in is in and is said so.
+    var graphRound = devicePurpose === "graph"
+    var afterSignIn = graphRoundOfSignIn && sessionEnabled
+    graphRoundOfSignIn = false
     cancelDeviceLogin()
     tokenRequestSerial++
     if (tokenRequest && tokenRequest.abort) tokenRequest.abort()
@@ -551,6 +659,8 @@ Item {
     refreshBusy = false
     loginBusy = false
     finishWaiters("", "Sign-in cancelled")
+    if (graphRound) finishGraphWaiters("", "Sign-in cancelled")
+    if (afterSignIn) loginSucceeded()
   }
 
   function logout() {

@@ -24,6 +24,9 @@ Column {
   readonly property var auth: service ? service.auth : null
   readonly property bool signedIn: !!auth && auth.loggedIn
   readonly property bool busy: !!auth && auth.loginBusy
+  // Signed in for mail, and Microsoft refused Graph for want of consent:
+  // the sign-in button stays, as the Graph sign-in.
+  readonly property bool graphConsentNeeded: root.signedIn && !!auth && auth.graphConsentNeeded === true
   readonly property bool usingBuiltinClient: Microsoft.isValidClientId(Microsoft.BUILTIN_CLIENT_ID)
   readonly property bool toolsMissing: !!auth && auth.toolsChecked && auth.missingTools.length > 0
 
@@ -74,6 +77,13 @@ Column {
 
   function signIn() {
     if (root.busy) return
+    if (root.graphConsentNeeded) {
+      // Nothing to save: the mailbox is set up and signed in. The code
+      // asked for is Graph's.
+      errorText.text = ""
+      auth.beginLogin()
+      return
+    }
     var values = accountValues()
     if (!values || !service) return
     errorText.text = ""
@@ -323,7 +333,9 @@ Column {
 
       Text {
         width: parent.width
-        text: "Enter this code on the Microsoft page opened in your browser:"
+        text: root.auth && root.auth.devicePurpose === "graph"
+          ? "One more code, to allow Microsoft Graph (sending and the calendar). Enter it on the Microsoft page opened in your browser:"
+          : "Enter this code on the Microsoft page opened in your browser:"
         color: root.textColor
         font.family: root.panelFontFamily
         font.pixelSize: Style.font.caption
@@ -355,8 +367,8 @@ Column {
 
     Button {
       objectName: "outlook-sign-in"
-      visible: !root.signedIn
-      text: "Sign in with Microsoft..."
+      visible: !root.signedIn || root.graphConsentNeeded
+      text: root.graphConsentNeeded ? "Allow Microsoft Graph..." : "Sign in with Microsoft..."
       enabled: !root.busy && addressField.text.trim() !== ""
         && (root.usingBuiltinClient || clientIdField.text.trim() !== "")
       foreground: root.textColor

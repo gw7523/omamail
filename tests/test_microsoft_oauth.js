@@ -127,10 +127,27 @@ assert.ok(microsoft.redact('{"access_token":"eyJsecret.payload.signature","devic
 
 console.log("test_microsoft_oauth.js ok")
 
-// The sign-in asks consent for the Graph scopes beside the mail ones, so the
-// later exchange of the same refresh token is not refused as a bad grant.
-assert.ok(microsoft.SIGN_IN_SCOPES.indexOf("https://outlook.office.com/IMAP.AccessAsUser.All") >= 0)
-assert.ok(microsoft.SIGN_IN_SCOPES.indexOf("https://graph.microsoft.com/Mail.Send") >= 0)
-assert.ok(microsoft.deviceAuthorizationBody(clientId, microsoft.SIGN_IN_SCOPES).indexOf("Mail.Send") >= 0)
+// Every request names one resource, the device-code request included:
+// the sign-in asks the mail scopes, the Graph sign-in Graph's with offline
+// access, and neither names the other's resource.
+assert.ok(microsoft.deviceAuthorizationBody(clientId, microsoft.SCOPES).indexOf("IMAP.AccessAsUser.All") >= 0)
+assert.ok(microsoft.deviceAuthorizationBody(clientId, microsoft.SCOPES).indexOf("graph.microsoft.com") < 0,
+  "the device-code request names the mail resource alone; two resources are refused (AADSTS28000)")
+assert.ok(microsoft.GRAPH_SIGN_IN_SCOPES.indexOf("offline_access") >= 0)
+assert.ok(microsoft.GRAPH_SIGN_IN_SCOPES.indexOf("https://graph.microsoft.com/Mail.Send") >= 0)
+assert.ok(microsoft.deviceAuthorizationBody(clientId, microsoft.GRAPH_SIGN_IN_SCOPES).indexOf("outlook.office.com") < 0)
+// A refusal for want of consent is told apart from a dead session, by the
+// sub-error, the code, or the description; a plain bad grant is neither.
+const unconsented = microsoft.parseTokenResponse(400,
+  JSON.stringify({ error: "invalid_grant", suberror: "consent_required", error_codes: [65001] }), "")
+assert.strictEqual(unconsented.consentRequired, true)
+assert.strictEqual(microsoft.parseTokenResponse(400,
+  JSON.stringify({ error: "invalid_grant", error_codes: [65001] }), "").consentRequired, true)
+assert.strictEqual(microsoft.parseTokenResponse(400,
+  JSON.stringify({ error: "interaction_required", error_description: "AADSTS65001: not consented" }), "").consentRequired, true)
+assert.strictEqual(invalid.consentRequired, false)
+assert.strictEqual(microsoft.parseTokenResponse(400,
+  JSON.stringify({ error: "invalid_client", error_codes: [65001] }), "").consentRequired, false)
+assert.ok(microsoft.graphConsentMessage().indexOf("Allow Microsoft Graph") >= 0)
 assert.ok(microsoft.refreshTokenBody(clientId, "r", microsoft.SCOPES).indexOf("graph.microsoft.com") < 0,
   "a refresh names the mail resource alone; two resources in one token request are refused")
