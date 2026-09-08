@@ -133,6 +133,62 @@ Item {
       app.resetNavigation()
     }
 
+    function having(item, accept) {
+      if (accept(item)) return item
+      var children = item.children || []
+      for (var i = 0; i < children.length; i++) {
+        var found = having(children[i], accept)
+        if (found) return found
+      }
+      return null
+    }
+
+    function test_reader_star_uses_the_visible_selection_data() {
+      return [
+        { tag: "checked-open-message", checked: true, outside: false, compact: false, starred: false, expected: "1:INBOX,2:INBOX" },
+        { tag: "unstar-checked-messages", checked: true, outside: false, compact: false, starred: true, expected: "1:INBOX,2:INBOX" },
+        { tag: "open-message-outside-selection", checked: true, outside: true, compact: false, starred: false, expected: "3:INBOX" },
+        { tag: "compact-reader-hides-selection", checked: true, outside: false, compact: true, starred: false, expected: "1:INBOX" },
+        { tag: "no-selection", checked: false, outside: false, compact: false, starred: false, expected: "1:INBOX" }
+      ]
+    }
+
+    function test_reader_star_uses_the_visible_selection(data) {
+      seed([entry(ada)], "imap:" + ada)
+      var account = mailService.accountAt(0)
+      var messages = [row("1:INBOX"), row("2:INBOX"), row("3:INBOX")]
+      for (var i = 0; i < messages.length; i++) messages[i].starred = data.starred
+      account.messages = messages
+      account.selectedId = data.outside ? "3:INBOX" : "1:INBOX"
+      account.selectedMessage = messages[data.outside ? 2 : 0]
+      app.open()
+      var window = having(app, function(item) { return item.title === "Omamail" })
+      verify(window !== null)
+      window.width = data.compact ? 600 : 980
+      app.pushEntry("reader", { id: account.selectedId })
+      if (data.checked) {
+        verify(app.toggleCheck("1:INBOX"))
+        verify(app.toggleCheck("2:INBOX"))
+      }
+      compare(app.selectionActive, data.checked && !data.compact)
+      var cursorBefore = app.cursorId
+      var reader = having(app, function(item) { return item.forceRichAnyway !== undefined })
+      verify(reader !== null)
+      var star = having(reader, function(item) { return item.iconName === "star" })
+      verify(star !== null)
+      wait(0)
+      mouseClick(star, star.width / 2, star.height / 2)
+      tryCompare(record, "batches", [data.expected])
+      compare(app.cursorId, cursorBefore, "starring does not move the list cursor")
+      var acted = data.expected.split(",")
+      for (var j = 0; j < messages.length; j++) {
+        var changed = acted.indexOf(messages[j].id) >= 0
+        compare(account.messages[j].starred, changed ? !data.starred : data.starred)
+      }
+      app.close()
+      window.width = 980
+    }
+
     // Ada and Bob both hold 42:INBOX. Ticked in Ada's list, the id must not
     // become a trash request through Bob's client, whether the switch came
     // through the window or straight to the service.

@@ -2048,12 +2048,17 @@ Item {
             // from a member the action lands on the row the conversation was
             // opened from, which is where the reader came from. Which members
             // an action reaches from there is "Actions on a conversation row".
-            // The toolbar emits archive and trash and nothing else; the star
-            // is a button of its own, through `toggleStar`, which acts on the
-            // open message. Unless the open message is one of the ticked rows,
-            // in which case the buttons mean all of them, by the same rule as
-            // a row's buttons.
             var outside = root.checkedIds.indexOf(root.service.selectedId) < 0
+            // A star stays on the open member unless it belongs to the visible
+            // selection. It never moves the list's independent cursor.
+            if (action === "star") {
+              if (root.selectionActive && !outside)
+                root.actOnChecked(Model.starActionFor(Model.summariesById(
+                    root.service.messages, root.checkedIds)))
+              else
+                root.service.toggleStar(root.service.selectedId)
+              return
+            }
             if (!Conversation.holdsMember(root.service.selectedThread,
                 root.service.selectedId) || root.cursorId === "")
               root.cursorId = root.service.selectedId
