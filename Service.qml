@@ -59,7 +59,7 @@ Item {
 
   readonly property var defaultSettingValues: ({
     refreshIntervalSec: 120,
-    maxMessages: 25,
+    maxMessages: 50,
     heavyMessageRendering: Html.HEAVY_MESSAGE_RENDERING_DEFAULT,
     contentDirection: Direction.MODE_DEFAULT,
     defaultQuery: "in:inbox",
