@@ -35,6 +35,7 @@ QML_FILES := Service.qml BarWidget.qml App.qml \
 	components/ConversationRail.qml \
 	components/ReaderNotice.qml \
 	components/InviteCard.qml \
+	components/StateSwitch.qml \
 	components/ReaderBlankSlate.qml \
 	components/ReaderSkeleton.qml \
 	components/ComposeView.qml \

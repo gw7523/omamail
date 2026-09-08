@@ -71,15 +71,17 @@ Column {
       }
     }
 
-    ToggleSwitch {
+    StateSwitch {
       id: unifiedSwitch
-      objectName: "unifiedCalendarSwitch"
+      switchName: "unifiedCalendarSwitch"
       anchors.right: parent.right
       anchors.rightMargin: Style.space(10)
       anchors.verticalCenter: parent.verticalCenter
       checked: !!root.service && root.service.unifiedCalendarView === true
       foreground: root.textColor
       accent: root.accentColor
+      fontFamily: root.panelFontFamily
+      wordColor: root.dimColor
       onToggled: if (root.service)
         root.service.setUnifiedCalendarView(!root.service.unifiedCalendarView)
     }
