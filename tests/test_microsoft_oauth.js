@@ -53,6 +53,13 @@ assert.strictEqual(microsoft.missingCalendarScope("https://graph.microsoft.com/M
 assert.ok(graphBody.indexOf("IMAP.AccessAsUser.All") < 0, "one resource per token")
 assert.strictEqual(microsoft.missingGraphScope("https://graph.microsoft.com/Mail.Send"), false)
 assert.strictEqual(microsoft.missingGraphScope("https://graph.microsoft.com/User.Read"), true)
+// Microsoft lists Graph's scopes short; an answer listing none says nothing.
+assert.strictEqual(microsoft.missingGraphScope("Mail.Send Calendars.ReadWrite openid profile"), false)
+assert.strictEqual(microsoft.missingGraphScope("mail.send"), false)
+assert.strictEqual(microsoft.missingGraphScope(""), false)
+assert.strictEqual(microsoft.missingGraphScope("openid profile User.Read"), true)
+deepEqual(microsoft.missingMailScopes(""), [])
+deepEqual(microsoft.missingMailScopes("IMAP.AccessAsUser.All SMTP.Send"), [])
 assert.ok(microsoft.graphScopeMessage().indexOf("Mail.Send") >= 0)
 assert.strictEqual(microsoft.isValidClientId(clientId), true)
 assert.strictEqual(microsoft.isValidClientId("not-a-guid"), false)

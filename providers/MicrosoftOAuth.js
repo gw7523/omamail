@@ -143,14 +143,25 @@ function graphRefreshBody(clientId, refreshToken) {
 // Whether a Graph token answered with the scope sending needs, and whether
 // with the one the calendar needs. A registration consented for one and
 // not the other is told which.
+// Whether a token answer lists a scope: by its full name or, as Microsoft
+// lists Graph's, by the short one. An answer that lists none says nothing
+// and is taken as granted — a permission truly missing is refused where it
+// is used, not mistaken for consent to collect.
+function scopeListed(granted, scope) {
+  var text = String(granted || "").trim().toLowerCase()
+  if (text === "") return true
+  var have = text.split(/\s+/)
+  var full = String(scope || "").toLowerCase()
+  var short = full.substring(full.lastIndexOf("/") + 1)
+  return have.indexOf(full) >= 0 || have.indexOf(short) >= 0
+}
+
 function missingGraphScope(granted) {
-  var have = String(granted || "").toLowerCase().split(/\s+/)
-  return have.indexOf(GRAPH_SCOPES[0].toLowerCase()) < 0
+  return !scopeListed(granted, GRAPH_SCOPES[0])
 }
 
 function missingCalendarScope(granted) {
-  var have = String(granted || "").toLowerCase().split(/\s+/)
-  return have.indexOf(GRAPH_SCOPES[1].toLowerCase()) < 0
+  return !scopeListed(granted, GRAPH_SCOPES[1])
 }
 
 function calendarScopeMessage() {
@@ -344,13 +355,12 @@ function graphConsentMessage() {
 }
 
 function missingMailScopes(granted) {
-  var have = String(granted || "").toLowerCase().split(/\s+/)
   var missing = []
   for (var i = 0; i < SCOPES.length; i++) {
     var scope = SCOPES[i]
     // Not resource scopes: a token answer does not list them.
     if (scope === "offline_access" || scope === "openid") continue
-    if (have.indexOf(scope.toLowerCase()) < 0) missing.push(scope)
+    if (!scopeListed(granted, scope)) missing.push(scope)
   }
   return missing
 }

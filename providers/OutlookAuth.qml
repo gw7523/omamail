@@ -48,6 +48,11 @@ Item {
   // signed in and stays so: not `loginBusy`, which would take the mailbox
   // out of service for the code's duration.
   property bool graphRoundBusy: false
+  // Bumped when such a round is cut short, so its answers arriving after
+  // are let go of without touching anything of the mail session's; and
+  // counted grants, so a refusal answered after a grant does not undo it.
+  property int graphRoundSerial: 0
+  property int graphGrants: 0
   // The mail session's account, by tenant and object id, from the id
   // token that came with its token: what the Graph sign-in is held to.
   property string accountKey: ""
@@ -134,6 +139,8 @@ Item {
     graphAccessTokenExpiresAt = 0
     graphConsentNeeded = false
     accountKey = ""
+    // A mailbox no longer signed in has no Graph code to finish.
+    cancelGraphRound()
   }
 
   // ------------------------------------------------------------- Graph
@@ -210,7 +217,13 @@ Item {
   }
 
   function handleGraphLookup(raw, context) {
-    if (!isCurrent(context) || !sessionEnabled) return
+    if (!isCurrent(context) || !sessionEnabled) {
+      // A lookup from before a cancel, exiting now: waiters queued behind
+      // it since are asked for again, or nothing would.
+      if (sessionEnabled && graphWaiters.length > 0) Qt.callLater(root.startGraphLookup)
+      return
+    }
+    var grants = graphGrants
     var refreshToken = String(raw || "")
     if (refreshToken === "") {
       finishGraphWaiters("", "Sign in to Outlook first")
@@ -220,6 +233,13 @@ Item {
       Microsoft.graphRefreshBody(clientId, refreshToken),
       function(status, text) {
         if (!root.isCurrent(context) || !root.sessionEnabled) return
+        // A Graph sign-in went through while this was out: its answer is
+        // the newer one, and this refusal or grant is of a token since
+        // replaced.
+        if (grants !== root.graphGrants && root.graphTokenIsFresh()) {
+          root.finishGraphWaiters(root.graphAccessToken, "")
+          return
+        }
         var result = Microsoft.parseTokenResponse(status, text, refreshToken)
         refreshToken = ""
         if (!result.ok) {
@@ -234,6 +254,8 @@ Item {
         }
         if (Microsoft.missingGraphScope(result.scope)) {
           // Issued without the permission: what a Graph sign-in collects.
+          // The refresh token it came with is the live one, whatever else.
+          if (result.refreshToken) root.storeRefreshToken(result.refreshToken)
           root.graphConsentNeeded = true
           root.finishGraphWaiters("", Microsoft.graphConsentMessage())
           return
@@ -243,6 +265,7 @@ Item {
   }
 
   function acceptGraphToken(result) {
+    graphGrants++
     graphConsentNeeded = false
     graphAccessToken = result.accessToken
     graphAccessTokenExpiresAt = Date.now() + result.expiresIn * 1000
@@ -266,6 +289,7 @@ Item {
         // Refused for want of consent, or issued without the permission:
         // either is what the second code collects.
         if ((!result.ok && result.consentRequired) || (result.ok && Microsoft.missingGraphScope(result.scope))) {
+          if (result.ok && result.refreshToken) root.storeRefreshToken(result.refreshToken)
           root.graphConsentNeeded = true
           root.graphRoundOfSignIn = true
           root.startDeviceFlow("graph")
@@ -576,12 +600,13 @@ Item {
   // poll until Microsoft answers with a token or a refusal.
   function startDeviceFlow(purpose) {
     var context = sessionContext()
+    var round = graphRoundSerial
     devicePurpose = purpose
     postForm(Microsoft.deviceUrlFor(tenant),
       Microsoft.deviceAuthorizationBody(clientId,
         purpose === "graph" ? Microsoft.GRAPH_SIGN_IN_SCOPES : scopes),
       function(status, text) {
-        if (!root.isCurrent(context)) return
+        if (!root.isCurrent(context) || round !== root.graphRoundSerial) return
         var result = Microsoft.parseDeviceResponse(status, text)
         if (!result.ok) {
           root.failLogin(result.error)
@@ -605,10 +630,11 @@ Item {
       return
     }
     var context = sessionContext()
+    var round = graphRoundSerial
     postForm(Microsoft.tokenUrlFor(tenant),
       Microsoft.deviceTokenBody(clientId, deviceCode),
       function(status, text) {
-        if (!root.isCurrent(context)) return
+        if (!root.isCurrent(context) || round !== root.graphRoundSerial) return
         var result = Microsoft.parseTokenResponse(status, text, "")
         if (result.pending) {
           if (result.slowDown) root.devicePollIntervalMs += 5000
@@ -706,7 +732,22 @@ Item {
     sessionUnavailable(lastError)
   }
 
+  // A Graph sign-in asked for from the setup page, cut short: the code goes
+  // and its waiters are told, and nothing of the mail session — a refresh
+  // in flight, its waiters, a lookup — is touched.
+  function cancelGraphRound() {
+    if (!graphRoundBusy) return
+    graphRoundSerial++
+    graphRoundBusy = false
+    cancelDeviceLogin()
+    finishGraphWaiters("", "Sign-in cancelled")
+  }
+
   function cancelLogin() {
+    if (graphRoundBusy && !loginBusy) {
+      cancelGraphRound()
+      return
+    }
     sessionGeneration++
     var oldLookup = lookupProcess
     lookupProcess = null

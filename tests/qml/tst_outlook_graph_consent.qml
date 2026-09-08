@@ -25,6 +25,12 @@ Item {
       // What the Graph exchange grants when not the full scope; whether the
       // saved Graph session is dead.
       property string partialGrant: ""
+      // Microsoft lists Graph's scopes short; a mail refresh, or a Graph
+      // exchange, left unanswered until the test answers it.
+      property bool shortScopes: false
+      property bool deferMailRefresh: false
+      property bool deferGraphExchange: false
+      property var deferred: null
       property bool deferGraphCheck: false
       property var refusals: []
       onGraphRefused: function(reason) { refusals = refusals.concat([reason]) }
@@ -54,7 +60,10 @@ Item {
         return out
       }
       function mailScopes() { return "https://outlook.office.com/IMAP.AccessAsUser.All https://outlook.office.com/SMTP.Send" }
-      function graphScopes() { return "https://graph.microsoft.com/Mail.Send https://graph.microsoft.com/Calendars.ReadWrite" }
+      function graphScopes() {
+        return shortScopes ? "Mail.Send Calendars.ReadWrite openid profile email"
+          : "https://graph.microsoft.com/Mail.Send https://graph.microsoft.com/Calendars.ReadWrite"
+      }
       function postForm(url, body, callback) {
         var params = fields(body)
         requests = requests.concat([{ url: url, scope: String(params.scope || ""), grant: String(params.grant_type || "") }])
@@ -91,6 +100,10 @@ Item {
             return
           }
           if (forGraph && deferGraphCheck) return
+          if ((forGraph && deferGraphExchange) || (!forGraph && deferMailRefresh)) {
+            deferred = callback
+            return
+          }
           if (forGraph && !graphConsented) {
             callback(400, JSON.stringify({ error: "invalid_grant", suberror: "consent_required",
               error_codes: [65001], error_description: "AADSTS65001: not consented" }))
@@ -135,6 +148,7 @@ Item {
       compare(auth.loggedIn, true)
       compare(auth.accessToken, "mail-token")
     }
+    function mailScopesText() { return "https://outlook.office.com/IMAP.AccessAsUser.All https://outlook.office.com/SMTP.Send" }
     function lookupProcess(auth) {
       for (var i = 0; i < auth.children.length; i++) {
         var child = auth.children[i]
@@ -250,6 +264,90 @@ Item {
       compare(auth.refusals.length, 1)
       verify(auth.refusals[0].indexOf("bob@example.test") >= 0, auth.refusals[0])
       compare(auth.keyringJobs.length + (auth.keyringJob ? 1 : 0), 1, "the mail token's store alone")
+    }
+
+    function test_graph_scopes_listed_short_are_a_full_grant() {
+      var auth = fresh({ graphConsented: true, shortScopes: true })
+      signInForMail(auth)
+      compare(auth.successes, 1)
+      compare(auth.requests.length, 3, "no second code for a grant Microsoft lists short")
+      compare(auth.graphAccessToken, "graph-token")
+      compare(auth.graphConsentNeeded, false)
+    }
+
+    function test_a_partial_grant_keeps_the_refresh_token_it_came_with() {
+      var auth = fresh({ graphConsented: true, partialGrant: "https://graph.microsoft.com/User.Read" })
+      signInForMail(auth)
+      compare(auth.devicePurpose, "graph")
+      var stored = []
+      if (auth.keyringJob) stored.push(auth.keyringJob.token)
+      for (var i = 0; i < auth.keyringJobs.length; i++) stored.push(auth.keyringJobs[i].token)
+      compare(stored, ["refresh-mail", "refresh-rotated"], "the rotated token is not dropped for want of a scope")
+    }
+
+    function test_cancelling_a_settings_graph_round_leaves_the_mail_session_alone() {
+      var auth = fresh({ entrySettings: { tenant: "organizations", send: "" }, deferMailRefresh: true })
+      auth.accessToken = "mail-token"
+      auth.accessTokenExpiresAt = Date.now() + 3600000
+      auth.loggedIn = true
+      auth.graphConsentNeeded = true
+      auth.beginLogin()
+      compare(auth.graphRoundBusy, true)
+      compare(auth.loginBusy, false)
+      // The mail token ages out under the code; a refresh goes out.
+      auth.accessTokenExpiresAt = Date.now()
+      var mailAnswer = ""
+      auth.withCredentials(function(token, error) { mailAnswer = token + "|" + error })
+      var lookup = null
+      for (var i = 0; i < auth.children.length; i++) {
+        var child = auth.children[i]
+        if (child.command && child.command[0] === "secret-tool" && child.command[1] === "lookup"
+            && child.purpose === "session" && child.running) lookup = child
+      }
+      verify(lookup !== null, "the mail session's own lookup")
+      lookup.stdout.text = "refresh-mail\n"
+      lookup.running = false
+      lookup.exited(0)
+      compare(auth.refreshBusy, true)
+      verify(auth.deferred !== null)
+      auth.cancelLogin()
+      compare(auth.graphRoundBusy, false)
+      compare(auth.deviceCode, "")
+      compare(auth.refreshBusy, true, "the refresh in flight is not touched")
+      compare(mailAnswer, "", "nor its waiter")
+      compare(auth.loggedIn, true)
+      var answer = auth.deferred
+      auth.deferred = null
+      answer(200, JSON.stringify({ access_token: "mail-token-2", refresh_token: "refresh-mail-2", expires_in: 3600,
+        scope: mailScopesText() }))
+      compare(mailAnswer, "mail-token-2|")
+      compare(auth.refreshBusy, false)
+    }
+
+    function test_a_refusal_answered_after_a_grant_does_not_ask_again() {
+      var auth = fresh({ entrySettings: { tenant: "organizations", send: "" }, deferGraphExchange: true })
+      auth.accessToken = "mail-token"
+      auth.accessTokenExpiresAt = Date.now() + 3600000
+      auth.loggedIn = true
+      var answer = ""
+      auth.withGraphToken(function(token, error) { answer = token + "|" + error })
+      var lookup = lookupProcess(auth)
+      lookup.stdout.text = "refresh-mail\n"
+      lookup.running = false
+      lookup.exited(0)
+      verify(auth.deferred !== null, "the exchange is out")
+      // Meanwhile the code is entered from the settings page.
+      auth.graphConsentNeeded = true
+      auth.beginLogin()
+      compare(auth.devicePurpose, "graph")
+      auth.pollDeviceCode()
+      compare(auth.graphAccessToken, "graph-token")
+      compare(auth.graphConsentNeeded, false)
+      compare(answer, "graph-token|", "the waiter has its token from the code")
+      var late = auth.deferred
+      auth.deferred = null
+      late(400, JSON.stringify({ error: "invalid_grant", suberror: "consent_required", error_codes: [65001] }))
+      compare(auth.graphConsentNeeded, false, "a refusal of a token since replaced changes nothing")
     }
 
     function test_a_saved_session_not_restored_yet_signs_in_for_mail_first() {
