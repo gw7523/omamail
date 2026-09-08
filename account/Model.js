@@ -1911,6 +1911,7 @@ function filterRows(rows, query) {
   }
   if (typed !== "") out.sort(function(a, b) { return b.score - a.score || a.sourceIndex - b.sourceIndex })
   return out
+}
 // The status line's account of what is still owed: sends going or parked,
 // actions running or waiting their turn. One phrase per kind and nothing at
 // all when nothing is, since the strip is read for what is outstanding and a
