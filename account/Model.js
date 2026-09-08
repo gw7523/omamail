@@ -406,20 +406,49 @@ function labelChangesFor(action, sourceLabelId) {
 // its row, and IMAP would be asked to UID MOVE a message into the same folder.
 // Sorted by name rather than by the order the provider returned, which on
 // Gmail is neither alphabetical nor stable between accounts.
+// With nothing typed, the labels as the rail draws them: the tree, a child
+// under its parent, each row saying how deep it sits so the picker can step
+// it in. Typed, the best matches first, flat — the letters name the label,
+// not its place. The label the list is already in is left out either way.
 function movableLabels(labels, query, currentLabelId) {
   var candidates = Array.isArray(labels) ? labels : []
-  var typed = String(query || "").trim().toLowerCase()
+  var typed = String(query || "").trim()
   var current = String(currentLabelId || "")
   var destinations = []
+  if (typed === "") {
+    var rows = labelTree(candidates, [])
+    for (var r = 0; r < rows.length; r++) {
+      if (!rows[r].selectable || rows[r].id === current) continue
+      var at = indexById(candidates, rows[r].id)
+      if (at < 0) continue
+      var copy = {}
+      for (var key in candidates[at]) copy[key] = candidates[at][key]
+      copy.depth = rows[r].depth
+      copy.leaf = rows[r].name
+      destinations.push(copy)
+    }
+    return destinations
+  }
   for (var i = 0; i < candidates.length; i++) {
     var label = candidates[i]
     if (!label || label.system === true) continue
     if (String(label.id || "") === current) continue
     var labelName = String(label.name || "")
-    if (typed !== "" && labelName.toLowerCase().indexOf(typed) < 0) continue
-    destinations.push(label)
+    var score = fuzzyScore(typed, labelName)
+    if (score <= 0) continue
+    var kept = {}
+    for (var k in label) kept[k] = label[k]
+    kept.depth = 0
+    kept.leaf = labelName
+    kept.score = score
+    kept.sourceIndex = i
+    destinations.push(kept)
   }
-  destinations.sort(compareLabelNames)
+  // Equal scores: the shorter path first, since the letters name a parent
+  // as well as everything under it and the parent is the likelier answer.
+  destinations.sort(function(a, b) {
+    return b.score - a.score || a.leaf.length - b.leaf.length || a.sourceIndex - b.sourceIndex
+  })
   return destinations
 }
 
@@ -493,6 +522,7 @@ function unavailableActions(capabilities) {
   var out = []
   if (caps.archive !== true) out.push("archive")
   if (caps.star !== true) out.push("star")
+  if (caps.move !== true) out.push("moveToLabel")
   return out
 }
 

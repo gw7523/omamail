@@ -978,8 +978,12 @@ Item {
   // the reader there is only one message it could mean. Refuse an unavailable
   // move before asking for a destination, through the same provider guard that
   // checks the final action before its optimistic update.
-  function openLabelPicker() {
+  // Opened on a message outside the ticks, the picker moves that one alone.
+  property bool labelPickerOnlyCursor: false
+
+  function openLabelPicker(onlyCursor) {
     if (!service || (cursorId === "" && !selectionActive)) return false
+    labelPickerOnlyCursor = onlyCursor === true
     // A merged list draws no labels, so there is nothing to offer and the
     // picker would open empty on a destination list it cannot fill — and a
     // chosen id would belong to whichever mailbox happened to be active
@@ -1331,7 +1335,6 @@ Item {
       root.clearChecksIfForeign()
       root.cursorId = ""
       root.closeLabelPopups()
-      // The agent popup is about one account's message too.
       agentPrompt.close()
     }
     function onSidebarWidthChanged() { root.sidebarWidth = root.service.sidebarWidth }
@@ -1552,12 +1555,8 @@ Item {
 
   // ------------------------------------------------------------ labels
 
-  // Every label popup — the menu, the name prompt, the move picker, the
-  // delete confirmation — is opened for one account and answers to it by
-  // id, whatever the window has switched to since. An IMAP label id is a
-  // folder name, which another account may well have too, so the open
-  // account is no guide to whose folder was meant. And a switch closes
-  // them: a prompt about a mailbox no longer on screen is a trap.
+  // Label popups answer to the account they opened on, by id; a switch
+  // closes them.
   function openLabelMenu(labelId, path, sceneX, sceneY) {
     if (!service) return
     labelMenu.accountId = service.activeAccountId
@@ -2196,6 +2195,7 @@ Item {
             if (!Conversation.holdsMember(root.service.selectedThread,
                 root.service.selectedId) || root.cursorId === "")
               root.cursorId = root.service.selectedId
+            if (action === "moveToLabel") return root.openLabelPicker(outside)
             root.actOnCursor(action, outside)
           }
         }
@@ -2923,7 +2923,7 @@ Item {
         labels: root.service ? root.service.labels : []
         currentLabelId: root.service ? String(root.service.rawLabelId || "") : ""
         onLabelChosen: function(labelId) {
-          root.actOnCursor("label:" + labelId)
+          root.actOnCursor("label:" + labelId, root.labelPickerOnlyCursor)
         }
       }
 
@@ -2971,6 +2971,7 @@ Item {
           // means that row alone, whatever else is ticked.
           var outside = root.checkedIds.indexOf(id) < 0
           root.cursorId = id
+          if (action === "moveToLabel") return root.openLabelPicker(outside)
           if ((action === "star" || action === "unstar") && root.selectionActive && !outside)
             return root.actOnChecked(Model.starActionFor(Model.summariesById(root.service.messages, root.checkedIds)))
           root.actOnCursor(action, outside)

@@ -862,11 +862,27 @@ Item {
           foreground: root.dimColor; hoverColor: root.textColor; fontFamily: root.panelFontFamily
           onClicked: root.actionRequested("archive")
         }
+        // Archive under a label, or move to a folder: the same picker `v`
+        // opens, one press away in the reader too.
         IconButton {
-          id: trashButton
+          id: moveButton
+          objectName: "reader-move-button"
           x: (archiveButton.visible
             ? archiveButton.x + archiveButton.width
             : actionGap.x + actionGap.width) + messageActions.gap
+          y: Math.round((parent.height - height) / 2)
+          visible: !!root.service && root.service.canMoveToLabel
+          iconName: "label"; tooltipText: "Move to a label · v"
+          foreground: root.dimColor; hoverColor: root.textColor; fontFamily: root.panelFontFamily
+          onClicked: root.actionRequested("moveToLabel")
+        }
+        IconButton {
+          id: trashButton
+          x: (moveButton.visible
+            ? moveButton.x + moveButton.width
+            : (archiveButton.visible
+              ? archiveButton.x + archiveButton.width
+              : actionGap.x + actionGap.width)) + messageActions.gap
           y: Math.round((parent.height - height) / 2)
           iconName: "trash"; tooltipText: "Move to trash · d"
           foreground: root.dimColor; hoverColor: root.textColor; fontFamily: root.panelFontFamily
