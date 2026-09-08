@@ -617,6 +617,14 @@ Item {
   // the window cannot recompute lives here.
 
   property bool sidebarCollapsed: false
+  // How wide the rail and the list were dragged to, in pixels; 0 is "never
+  // dragged", which each pane reads as its own default.
+  property real sidebarWidth: 0
+  property real listWidth: 0
+  // The label paths folded shut in the rail, by path rather than by account:
+  // "Archive" folded is a way of reading the rail, and it reads the same in
+  // every mailbox that has one.
+  property var collapsedFolders: []
   // Somebody who needed the text bigger needs it bigger for their mail, not for
   // the message that made them reach for it. The same goes for `bodyMode`:
   // both of these are ways of reading mail, not ways of reading one message.
@@ -642,6 +650,9 @@ Item {
   function applyWindowPrefs(raw) {
     var prefs = Model.windowPrefs(raw)
     sidebarCollapsed = prefs.sidebarCollapsed
+    sidebarWidth = prefs.sidebarWidth
+    listWidth = prefs.listWidth
+    collapsedFolders = prefs.collapsedFolders
     bodyZoom = prefs.bodyZoom
     bodyMode = prefs.bodyMode
     alwaysShowImages = prefs.alwaysShowImages
@@ -678,6 +689,9 @@ Item {
     windowPrefsSettling.stop()
     windowWritePayload = JSON.stringify({
       sidebarCollapsed: sidebarCollapsed,
+      sidebarWidth: sidebarWidth,
+      listWidth: listWidth,
+      collapsedFolders: collapsedFolders,
       bodyZoom: bodyZoom,
       bodyMode: bodyMode,
       alwaysShowImages: alwaysShowImages,
@@ -686,6 +700,28 @@ Item {
     windowWriter.command = [pluginDir + "/scripts/config-store.sh", "window.json"]
     windowWriter.running = true
   }
+
+  // Written when a drag ends, not while it runs: a drag is a hundred values
+  // in a second and the file wants the one settled on.
+  function setPaneWidths(sidebar, list) {
+    var nextSidebar = Model.paneWidth(sidebar)
+    var nextList = Model.paneWidth(list)
+    if (nextSidebar === sidebarWidth && nextList === listWidth) return
+    sidebarWidth = nextSidebar
+    listWidth = nextList
+    saveWindowPrefs()
+  }
+
+  function toggleFolder(path) {
+    var key = String(path || "")
+    if (key === "") return
+    collapsedFolders = Model.togglePath(collapsedFolders, key)
+    saveWindowPrefs()
+  }
+
+  // The rail's labels in the order it draws them, folded rows left out — the
+  // list the Ctrl digits number.
+  readonly property var visibleLabels: Model.visibleLabels(labels, collapsedFolders)
 
   function setSidebarCollapsed(value) {
     var next = value === true
@@ -1351,6 +1387,16 @@ Item {
       return
     }
     eachHost(function(host) { host.markAllRead() })
+  }
+  // Several ticked rows at once. A merged list draws rows from several
+  // mailboxes, and a batch is one mailbox's request, so it is refused there
+  // the way a move is: the rule every unavailable action follows.
+  function actMany(ids, action) {
+    if (unified) {
+      fail("Acting on several messages needs one mailbox on screen")
+      return false
+    }
+    return current ? current.actMany(ids, action) : false
   }
   // The mailbox the From address belongs to, which compose already names:
   // `sendIdentities` spans every account and carries the id, so a unified

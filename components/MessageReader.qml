@@ -310,7 +310,7 @@ Item {
       foreground: root.summary && root.summary.starred ? root.accentColor : root.dimColor
       hoverColor: root.accentColor
       fontFamily: root.panelFontFamily
-      onClicked: if (root.service && root.summary) root.service.toggleStar(root.selectedId)
+      onClicked: if (root.service && root.summary) root.actionRequested("star")
     }
 
     Column {

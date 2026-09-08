@@ -479,11 +479,17 @@ function uidListCommand() {
   return "UID FETCH 1:* (UID)"
 }
 
-// An interactive search does not need every UID before it can begin. This one
-// short FETCH learns the immutable upper boundary of the mailbox; an empty
-// mailbox answers with no FETCH row at all.
-function uidCeilingCommand() {
-  return "UID FETCH *:* (UID)"
+// An interactive search does not need every UID before it can begin: the UID
+// of the last message by sequence number is the mailbox's upper boundary. The
+// obvious `UID FETCH *:*` cannot be used through curl, which takes a FETCH of
+// one message for a body fetch and routes its untagged answer where the
+// transport never sees it. A range that starts with a number passes through
+// intact; the count it starts from comes from STATUS on an earlier connection,
+// and running the range up to `*` rather than back to the count keeps a
+// message delivered between the two from sitting above the ceiling unseen.
+function topUidCommand(count) {
+  var n = Math.floor(Number(count))
+  return isFinite(n) && n >= 1 ? "FETCH " + n + ":* (UID)" : ""
 }
 
 // A SEARCH over a known UID snapshot can be split without using message

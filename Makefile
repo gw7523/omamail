@@ -1,6 +1,6 @@
 QMLLINT := /usr/lib/qt6/bin/qmllint
 QML_FILES := Service.qml BarWidget.qml App.qml \
-	account/MailAccount.qml account/NewMailNotification.qml \
+	account/MailAccount.qml account/BatchAction.qml account/Rsvp.qml account/NewMailNotification.qml \
 	cache/CacheStore.qml cache/BodyCache.qml \
 	providers/AuthManager.qml providers/GmailApiClient.qml \
 	providers/OutlookAuth.qml \
@@ -46,6 +46,8 @@ QML_FILES := Service.qml BarWidget.qml App.qml \
 	components/SearchBar.qml \
 	components/AppMenu.qml \
 	components/AccountSwitcher.qml \
+	components/MailboxSwitcher.qml \
+	components/ScopeButton.qml \
 	components/AccountRemovalDialog.qml \
 	components/BackBar.qml \
 	components/SettingsPage.qml \
@@ -167,6 +169,7 @@ test-qml:
 	QT_QPA_PLATFORM=offscreen QT_QUICK_BACKEND=software \
 		$(QMLTESTRUNNER) -import $(CURDIR)/tests/qml/imports -input tests/qml
 	python3 tests/test_outlook_http.py "$(QMLTESTRUNNER)"
+	python3 tests/test_sidebar_text.py "$(QMLTESTRUNNER)"
 
 # Both engines on the same fixtures. The QML column is the one that decides
 # anything — the shell runs that engine, not node's — so run it on the machine
