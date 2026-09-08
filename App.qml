@@ -2073,6 +2073,7 @@ Item {
 
             MessageList {
               id: list
+              scroller: listFlick
               // Match the sidebar's first row inset below the header.
               y: Style.space(6)
               // Full width, so selected and hovered rows meet the splitter.

@@ -1188,7 +1188,7 @@ function resultSummary(list, estimate, hasMore) {
   if (!hasMore) return pluralize(shown, noun)
   var total = Math.floor(Number(estimate) || 0)
   // A provider whose listing carries no total answers with what it read, which
-  // is the number already on screen. "25 of about 25" would be a claim HEY
+  // is the number already on screen. "50 of about 50" would be a claim HEY
   // never made; "so far" is the honest reading of the same two numbers, and
   // there is a Load more below it saying the rest exists.
   if (total <= shown) return pluralize(shown, noun) + " so far"
