@@ -37,6 +37,7 @@ QML_FILES := Service.qml BarWidget.qml App.qml \
 	components/InviteCard.qml \
 	components/SwitcherSearch.qml \
 	components/EventSuggestionCard.qml \
+	components/AccountNameField.qml \
 	components/ReaderBlankSlate.qml \
 	components/ReaderSkeleton.qml \
 	components/ComposeView.qml \
