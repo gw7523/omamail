@@ -380,8 +380,10 @@ Column {
           width: parent.width
           spacing: Style.space(8)
 
-          ToggleSwitch {
+          StateSwitch {
             anchors.verticalCenter: parent.verticalCenter
+            fontFamily: root.panelFontFamily
+            wordColor: root.dimColor
             checked: root.chosen[modelData.url] !== false
             foreground: root.textColor
             accent: root.accentColor

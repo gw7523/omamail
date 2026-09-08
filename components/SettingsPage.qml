@@ -521,7 +521,7 @@ Column {
       }
     }
 
-    ToggleSwitch {
+    StateSwitch {
       id: sentTimeSwitch
       anchors.right: parent.right
       anchors.rightMargin: Style.space(10)
@@ -529,6 +529,8 @@ Column {
       checked: !!root.service && root.service.readerShowsSentTime === true
       foreground: root.textColor
       accent: root.accentColor
+      fontFamily: root.panelFontFamily
+      wordColor: root.dimColor
       onToggled: if (root.service) root.service.setReaderShowsSentTime(!root.service.readerShowsSentTime)
     }
   }
@@ -1091,7 +1093,7 @@ Column {
       Column {
         id: suggestText
         anchors.left: parent.left
-        anchors.right: suggestState.left
+        anchors.right: suggestSwitch.left
         anchors.rightMargin: Style.space(10)
         anchors.verticalCenter: parent.verticalCenter
         spacing: Style.space(2)
@@ -1120,27 +1122,17 @@ Column {
         }
       }
 
-      Text {
-        id: suggestState
-        objectName: "suggestEventsState"
-        anchors.right: suggestSwitch.left
-        anchors.rightMargin: Style.space(8)
-        anchors.verticalCenter: parent.verticalCenter
-        text: suggestSwitch.checked ? "On" : "Off"
-        color: root.dimColor
-        font.family: root.panelFontFamily
-        font.pixelSize: Style.font.caption
-      }
-
-      ToggleSwitch {
+      StateSwitch {
         id: suggestSwitch
-        objectName: "suggestEventsSwitch"
+        switchName: "suggestEventsSwitch"
         anchors.right: parent.right
         anchors.rightMargin: Style.space(10)
         anchors.verticalCenter: parent.verticalCenter
         checked: !!root.service && root.service.suggestEvents === true
         foreground: root.textColor
         accent: root.accentColor
+        fontFamily: root.panelFontFamily
+        wordColor: root.dimColor
         onToggled: if (root.service) root.service.setSuggestEvents(!root.service.suggestEvents)
       }
     }
