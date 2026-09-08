@@ -1906,7 +1906,9 @@ Item {
           width: root.compact
             ? (root.currentView === "list" ? parent.width : 0)
             : Math.max(Style.space(100),
-                Math.min(parent.width - Style.space(360),
+                Math.min(parent.width - (sidebar.visible ? sidebar.width : 0)
+                  - (sidebarSplitter.visible ? sidebarSplitter.width : 0)
+                  - listSplitter.width - Style.space(200),
                   root.listWidth > 0 ? root.listWidth
                     : Math.min(Style.space(460), Math.round(parent.width * 0.34))))
           visible: width > 0 && !root.showPage && !root.composing

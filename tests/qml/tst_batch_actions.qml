@@ -143,6 +143,58 @@ Item {
       return null
     }
 
+    function test_pane_widths_leave_room_for_the_reader_data() {
+      return [
+        { tag: "sidebar-first", sidebarFirst: true, collapsed: false },
+        { tag: "list-first", sidebarFirst: false, collapsed: false },
+        { tag: "collapsed-sidebar", sidebarFirst: true, collapsed: true }
+      ]
+    }
+
+    function test_pane_widths_leave_room_for_the_reader(data) {
+      seed([entry(ada)], "imap:" + ada)
+      var account = mailService.accountAt(0)
+      account.messages = [row("1:INBOX")]
+      account.selectedId = "1:INBOX"
+      account.selectedMessage = account.messages[0]
+      app.open()
+      app.pushEntry("reader", { id: account.selectedId })
+      var window = having(app, function(item) { return item.title === "Omamail" })
+      var reader = having(app, function(item) { return item.forceRichAnyway !== undefined })
+      verify(window !== null && reader !== null)
+      window.width = 980
+      mailService.setSidebarCollapsed(data.collapsed)
+      app.sidebarWidth = 0
+      app.listWidth = 0
+      if (data.sidebarFirst) {
+        app.sidebarWidth = 360
+        wait(0)
+        app.listWidth = 4000
+      } else {
+        app.listWidth = 4000
+        wait(0)
+        app.sidebarWidth = 360
+      }
+      wait(0)
+      verify(reader.width >= 200, "wide reader remains usable: " + reader.width)
+      app.persistPaneWidths()
+      app.close()
+      app.open()
+      app.pushEntry("reader", { id: account.selectedId })
+      compare(app.listWidth, 4000, "clamping does not overwrite the saved preference")
+      for (var i = 0; i < 4; i++) {
+        window.width = [760, 759, 980, 1400][i]
+        wait(0)
+        verify(reader.width >= 200, "reader survives resize to " + window.width + ": " + reader.width)
+      }
+      app.close()
+      window.width = 980
+      mailService.setSidebarCollapsed(false)
+      app.sidebarWidth = 0
+      app.listWidth = 0
+      app.persistPaneWidths()
+    }
+
     function test_reader_star_uses_the_visible_selection_data() {
       return [
         { tag: "checked-open-message", checked: true, outside: false, compact: false, starred: false, expected: "1:INBOX,2:INBOX" },
