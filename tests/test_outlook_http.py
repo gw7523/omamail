@@ -103,7 +103,7 @@ Item {
       var started = Date.now()
       auth.refreshWithToken("synthetic-refresh", auth.sessionContext())
       verify(auth.refreshBusy)
-      verify(auth.tokenRequest !== null)
+      verify(auth.tokenRequests.length === 1)
       var calls = 0
       auth.withCredentials(function(token, error) {
         compare(token, "")
@@ -114,7 +114,7 @@ Item {
       verify(Date.now() - started >= 29000, "The fixture must reach the actual deadline")
       compare(calls, 1)
       compare(auth.tokenWaiters.length, 0)
-      compare(auth.tokenRequest, null)
+      compare(auth.tokenRequests.length, 0)
       compare(auth.loggedIn, false)
       compare(auth.accessToken, "")
       compare(auth.keyringJob, null)
@@ -133,7 +133,7 @@ Item {
       control("/received")
       auth.cancelLogin()
       compare(calls, 1)
-      compare(auth.tokenRequest, null)
+      compare(auth.tokenRequests.length, 0)
       compare(auth.refreshBusy, false)
       control("/release")
       wait(300)

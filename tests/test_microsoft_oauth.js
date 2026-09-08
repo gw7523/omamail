@@ -134,6 +134,7 @@ assert.ok(microsoft.deviceAuthorizationBody(clientId, microsoft.SCOPES).indexOf(
 assert.ok(microsoft.deviceAuthorizationBody(clientId, microsoft.SCOPES).indexOf("graph.microsoft.com") < 0,
   "the device-code request names the mail resource alone; two resources are refused (AADSTS28000)")
 assert.ok(microsoft.GRAPH_SIGN_IN_SCOPES.indexOf("offline_access") >= 0)
+assert.ok(microsoft.GRAPH_SIGN_IN_SCOPES.indexOf("openid") >= 0, "an id token names who entered the code")
 assert.ok(microsoft.GRAPH_SIGN_IN_SCOPES.indexOf("https://graph.microsoft.com/Mail.Send") >= 0)
 assert.ok(microsoft.deviceAuthorizationBody(clientId, microsoft.GRAPH_SIGN_IN_SCOPES).indexOf("outlook.office.com") < 0)
 // A refusal for want of consent is told apart from a dead session, by the
@@ -149,5 +150,22 @@ assert.strictEqual(invalid.consentRequired, false)
 assert.strictEqual(microsoft.parseTokenResponse(400,
   JSON.stringify({ error: "invalid_client", error_codes: [65001] }), "").consentRequired, false)
 assert.ok(microsoft.graphConsentMessage().indexOf("Allow Microsoft Graph") >= 0)
+assert.ok(microsoft.graphRefusedMessage("declined").indexOf("admin approval") >= 0)
+assert.ok(microsoft.graphRefusedMessage("declined").indexOf("Mail.Send") >= 0)
+// The name on an id token: the code entered as the mailbox's own account,
+// as another, or as nobody the token names.
+function idToken(claims) {
+  return "h." + Buffer.from(JSON.stringify(claims)).toString("base64url") + ".s"
+}
+assert.strictEqual(microsoft.signedInAs(idToken({ preferred_username: "Alice@Example.test" })), "alice@example.test")
+assert.strictEqual(microsoft.signedInAs(idToken({ email: "alice@example.test", name: "Alice" })), "alice@example.test")
+assert.strictEqual(microsoft.signedInAs(idToken({ upn: "alice@example.test" })), "alice@example.test")
+assert.strictEqual(microsoft.signedInAs(idToken({ name: "Zoë ✓" })), "")
+assert.strictEqual(microsoft.signedInAs("not a token"), "")
+assert.strictEqual(microsoft.sameAccount(idToken({ preferred_username: "alice@example.test" }), "Alice@example.test"), true)
+assert.strictEqual(microsoft.sameAccount(idToken({ preferred_username: "bob@example.test" }), "alice@example.test"), false)
+assert.strictEqual(microsoft.sameAccount("", "alice@example.test"), true, "no name cannot be told and is let through")
+assert.ok(microsoft.otherAccountMessage("bob@example.test", "alice@example.test").indexOf("bob@example.test") >= 0)
+assert.strictEqual(microsoft.parseTokenResponse(200, JSON.stringify({ access_token: "a", id_token: "h.p.s" }), "").idToken, "h.p.s")
 assert.ok(microsoft.refreshTokenBody(clientId, "r", microsoft.SCOPES).indexOf("graph.microsoft.com") < 0,
   "a refresh names the mail resource alone; two resources in one token request are refused")

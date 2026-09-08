@@ -41,7 +41,9 @@ var GRAPH_SCOPES = [
 // else from the mailbox's settings when the calendar's exchange is refused.
 // Consent is per user and client, not per token: once given, either
 // sign-in's refresh token exchanges for either resource.
-var GRAPH_SIGN_IN_SCOPES = ["offline_access"].concat(GRAPH_SCOPES)
+// `openid` brings an id token naming the account that entered the code,
+// so a code entered as someone else is refused, not filed as the mailbox.
+var GRAPH_SIGN_IN_SCOPES = ["openid", "offline_access"].concat(GRAPH_SCOPES)
 
 function normalizeTenant(value) {
   var text = trimmed(value).toLowerCase()
@@ -227,8 +229,80 @@ function parseTokenResponse(status, text, previousRefreshToken) {
     accessToken: String(payload.access_token),
     refreshToken: String(payload.refresh_token || previousRefreshToken || ""),
     expiresIn: Math.max(60, Number(payload.expires_in) || 3600),
-    scope: String(payload.scope || "")
+    scope: String(payload.scope || ""),
+    idToken: String(payload.id_token || "")
   }
+}
+
+// The account an id token names, lower-cased, or "" when it names none. The
+// token is Microsoft's own answer over TLS, read for the name alone and not
+// verified: it authorises nothing, it says who entered the code.
+function base64UrlDecode(text) {
+  var alphabet = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_"
+  var input = String(text || "").replace(/=+$/, "")
+  var out = ""
+  var bits = 0
+  var value = 0
+  for (var i = 0; i < input.length; i++) {
+    var index = alphabet.indexOf(input.charAt(i))
+    if (index < 0) return ""
+    value = ((value << 6) | index) & 0xffff
+    bits += 6
+    if (bits >= 8) {
+      bits -= 8
+      var byte = (value >> bits) & 255
+      out += "%" + (byte < 16 ? "0" : "") + byte.toString(16)
+    }
+  }
+  try { return decodeURIComponent(out) } catch (e) { return "" }
+}
+
+function idTokenClaims(idToken) {
+  var parts = String(idToken || "").split(".")
+  if (parts.length < 2) return null
+  return parseJson(base64UrlDecode(parts[1]))
+}
+
+function signedInAs(idToken) {
+  var claims = idTokenClaims(idToken)
+  if (!claims) return ""
+  var names = ["preferred_username", "email", "upn"]
+  for (var i = 0; i < names.length; i++) {
+    var value = trimmed(claims[names[i]]).toLowerCase()
+    if (value !== "") return value
+  }
+  return ""
+}
+
+// Whether the id token names the mailbox's own account — or names none,
+// which cannot be told and is let through.
+function sameAccount(idToken, email) {
+  var who = signedInAs(idToken)
+  return who === "" || who === trimmed(email).toLowerCase()
+}
+
+function otherAccountMessage(who, email) {
+  return "the second code was entered as " + String(who || "") + ", not " + trimmed(email)
+    + ". Sign in to Microsoft as the mailbox's own account"
+}
+
+function graphScopeNames() {
+  var names = []
+  for (var i = 0; i < GRAPH_SCOPES.length; i++) {
+    var value = String(GRAPH_SCOPES[i] || "")
+    names.push(value.substring(value.lastIndexOf("/") + 1))
+  }
+  return names.join(" and ")
+}
+
+// What a Graph sign-in that did not go through leaves on the setup page:
+// the mailbox is signed in, and how to ask again — or whom to ask, where
+// Microsoft wanted an administrator's approval, which the refusal that
+// started it cannot tell from consent nobody has given yet.
+function graphRefusedMessage(reason) {
+  return "Microsoft Graph was not allowed: " + String(reason || "") + ". The mailbox is signed in; "
+    + "Allow Microsoft Graph... in its settings asks again. If Microsoft asked for admin approval, "
+    + "an administrator must grant the app registration " + graphScopeNames() + " first"
 }
 
 // Microsoft's answer to an exchange for a resource the user has not

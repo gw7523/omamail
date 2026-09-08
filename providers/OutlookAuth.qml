@@ -83,11 +83,19 @@ Item {
   property string pendingRefreshToken: ""
   property double pendingExpiresIn: 0
 
-  property var tokenRequest: null
-  property int tokenRequestSerial: 0
+  // The requests in flight, each answered on its own: a refresh and a Graph
+  // exchange may overlap, and neither's answer is dropped for the other's.
+  // `cancelLogin` lets go of them all, and an answer let go of is not
+  // delivered.
+  property var tokenRequests: []
+  property int tokenRequestCount: 0
   readonly property int tokenTimeoutMs: 30000
 
   signal loginSucceeded()
+  // A Graph sign-in that did not go through, with what to do about it: for
+  // the setup page, since the mailbox itself is signed in and `lastError`
+  // is the mailbox's.
+  signal graphRefused(string reason)
   signal loggedOut()
   signal sessionUnavailable(string reason)
   signal credentialsSaved()
@@ -166,6 +174,8 @@ Item {
 
   function startGraphLookup() {
     if (graphLookupProcess || graphWaiters.length === 0) return
+    // Behind a sign-in, the waiters are answered by whatever ends it.
+    if (loginBusy) return
     if (keyringJob || keyringJobs.length > 0) {
       graphQueued = true
       return
@@ -250,9 +260,12 @@ Item {
         if (result.ok && !Microsoft.missingGraphScope(result.scope)) {
           root.acceptGraphToken(result)
         } else {
-          root.lastError = root.safeError(result.ok ? Microsoft.graphScopeMessage() : result.error)
-          root.finishGraphWaiters("", root.lastError)
+          var message = result.ok ? Microsoft.graphScopeMessage()
+            : "Microsoft Graph could not be checked: " + root.safeError(result.error) + ". Sending will ask again"
+          root.finishGraphWaiters("", message)
+          root.graphRefused(message)
         }
+        root.graphRoundOfSignIn = false
         root.loginBusy = false
         root.loginSucceeded()
       })
@@ -262,6 +275,13 @@ Item {
   // token consented for both resources, kept in place of the mail one —
   // the same user's and client's, and exchangeable for either.
   function acceptGraphSignIn(result) {
+    // The mail sign-in is verified by logging in to the mailbox with its
+    // token; this one by the name on its id token, since a code entered
+    // as someone else would file that someone's token as the mailbox's.
+    if (!Microsoft.sameAccount(result.idToken, configuredEmail)) {
+      failGraphRound(Microsoft.otherAccountMessage(Microsoft.signedInAs(result.idToken), configuredEmail))
+      return
+    }
     if (Microsoft.missingGraphScope(result.scope)) {
       failGraphRound(Microsoft.graphScopeMessage())
       return
@@ -278,10 +298,11 @@ Item {
   // The Graph sign-in failing leaves the mail one as it was: the account is
   // not told its session is gone, only what Graph will say when asked.
   function failGraphRound(reason) {
-    lastError = safeError(reason || "Microsoft sign-in failed. Please try again")
+    var message = Microsoft.graphRefusedMessage(safeError(reason || "Microsoft sign-in failed"))
     loginBusy = false
     cancelDeviceLogin()
-    finishGraphWaiters("", lastError)
+    finishGraphWaiters("", message)
+    graphRefused(message)
     var afterSignIn = graphRoundOfSignIn
     graphRoundOfSignIn = false
     if (afterSignIn) loginSucceeded()
@@ -418,9 +439,9 @@ Item {
   }
 
   function postForm(url, body, callback) {
-    var serial = ++tokenRequestSerial
     var request = new XMLHttpRequest()
-    tokenRequest = request
+    var id = ++tokenRequestCount
+    tokenRequests = tokenRequests.concat([{ id: id, request: request }])
     var deadline = tokenDeadlineComponent.createObject(root, { interval: tokenTimeoutMs })
 
     function disarm() {
@@ -433,8 +454,14 @@ Item {
     request.onreadystatechange = function() {
       if (request.readyState !== XMLHttpRequest.DONE) return
       disarm()
-      if (serial !== root.tokenRequestSerial) return
-      if (root.tokenRequest === request) root.tokenRequest = null
+      var kept = []
+      var live = false
+      for (var i = 0; i < root.tokenRequests.length; i++) {
+        if (root.tokenRequests[i].id === id) live = true
+        else kept.push(root.tokenRequests[i])
+      }
+      if (!live) return
+      root.tokenRequests = kept
       if (typeof callback === "function") callback(request.status, request.responseText)
     }
     request.open("POST", url)
@@ -509,8 +536,9 @@ Item {
       return
     }
     // Signed in for mail and refused Graph for want of consent: the code
-    // asked for is Graph's, and the mail session stands.
-    var forGraph = graphConsentNeeded && (loggedIn || savedSessionPresent)
+    // asked for is Graph's, and the mail session stands. A saved session
+    // not restored yet signs in for mail first, whatever Graph said.
+    var forGraph = graphConsentNeeded && loggedIn
     cancelLogin()
     sessionEnabled = true
     lastError = ""
@@ -582,7 +610,11 @@ Item {
         root.pendingAccessToken = result.accessToken
         root.pendingRefreshToken = result.refreshToken
         root.pendingExpiresIn = result.expiresIn
+        // The code has been entered: what the page shows from here is the
+        // mailbox being verified, or Graph's own code.
         root.deviceCode = ""
+        root.userCode = ""
+        root.verificationUri = ""
         root.verifyRequested(root.settings, root.pendingAccessToken)
       })
   }
@@ -604,6 +636,9 @@ Item {
     acceptToken(result)
     finishWaiters(accessToken, "")
     if (configuredSend === "graph") {
+      // The sign-in's tail is Graph's from here: cut short, the mail half
+      // is in and is said so.
+      graphRoundOfSignIn = true
       probeGraphConsent(result.refreshToken)
       return
     }
@@ -637,6 +672,8 @@ Item {
     loginBusy = false
     cancelDeviceLogin()
     finishWaiters("", lastError)
+    // Graph's waiters were parked behind this sign-in.
+    finishGraphWaiters("", lastError)
     sessionUnavailable(lastError)
   }
 
@@ -647,19 +684,22 @@ Item {
     if (oldLookup) oldLookup.running = false
     restoreQueued = false
     refreshRetry.stop()
-    // A Graph round cut short: its waiters are told, and where it was the
-    // tail of a sign-in, the mail half of that sign-in is in and is said so.
-    var graphRound = devicePurpose === "graph"
+    // Where what is cut short is the Graph tail of a sign-in — the check
+    // or the second code — the mail half is in and is said so.
     var afterSignIn = graphRoundOfSignIn && sessionEnabled
     graphRoundOfSignIn = false
     cancelDeviceLogin()
-    tokenRequestSerial++
-    if (tokenRequest && tokenRequest.abort) tokenRequest.abort()
-    tokenRequest = null
+    var open = tokenRequests
+    tokenRequests = []
+    for (var i = 0; i < open.length; i++) {
+      if (open[i].request && open[i].request.abort) open[i].request.abort()
+    }
     refreshBusy = false
     loginBusy = false
     finishWaiters("", "Sign-in cancelled")
-    if (graphRound) finishGraphWaiters("", "Sign-in cancelled")
+    // Graph's waiters, parked behind the sign-in or the Graph round's own,
+    // are answered either way.
+    finishGraphWaiters("", "Sign-in cancelled")
     if (afterSignIn) loginSucceeded()
   }
 

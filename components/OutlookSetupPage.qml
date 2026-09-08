@@ -110,6 +110,7 @@ Column {
     function onLastErrorChanged() {
       if (root.auth && root.auth.lastError !== "") errorText.text = root.auth.lastError
     }
+    function onGraphRefused(reason) { errorText.text = String(reason || "") }
   }
 
   ProviderHero {

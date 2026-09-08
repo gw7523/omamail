@@ -18,6 +18,15 @@ Item {
       // sign-in grants; whether the person declines the code on screen.
       property bool graphConsented: false
       property bool declineCode: false
+      // Who entered the second code, when not the mailbox's own account;
+      // whether the Graph check after the mail sign-in is left unanswered.
+      property string codeEnteredAs: ""
+      property bool deferGraphCheck: false
+      property var refusals: []
+      onGraphRefused: function(reason) { refusals = refusals.concat([reason]) }
+      function idToken(name) {
+        return "h." + Qt.btoa(JSON.stringify({ preferred_username: name })).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "") + ".s"
+      }
       // Whether the saved session is dead: a bad grant of the other kind.
       property bool deadSession: false
       property string lastDeviceScope: ""
@@ -62,7 +71,8 @@ Item {
           if (graphCode) graphConsented = true
           callback(200, JSON.stringify({ access_token: graphCode ? "graph-token" : "mail-token",
             refresh_token: graphCode ? "refresh-graph" : "refresh-mail", expires_in: 3600,
-            scope: graphCode ? graphScopes() : mailScopes() }))
+            scope: graphCode ? graphScopes() : mailScopes(),
+            id_token: graphCode ? idToken(codeEnteredAs !== "" ? codeEnteredAs : "alice@example.test") : "" }))
           return
         }
         if (params.grant_type === "refresh_token") {
@@ -70,6 +80,7 @@ Item {
             callback(400, JSON.stringify({ error: "invalid_grant", error_description: "AADSTS70000: expired" }))
             return
           }
+          if (forGraph && deferGraphCheck) return
           if (forGraph && !graphConsented) {
             callback(400, JSON.stringify({ error: "invalid_grant", suberror: "consent_required",
               error_codes: [65001], error_description: "AADSTS65001: not consented" }))
@@ -108,6 +119,7 @@ Item {
       verify(auth.requests[0].scope.indexOf("graph.microsoft.com") < 0,
         "the device-code request names the mail resource alone")
       auth.pollDeviceCode()
+      compare(auth.userCode, "", "the code entered is not shown while the mailbox is verified")
       auth.completeSignIn(true, "", auth.sessionGeneration)
       compare(auth.loggedIn, true)
       compare(auth.accessToken, "mail-token")
@@ -143,6 +155,7 @@ Item {
       compare(auth.graphConsentNeeded, true)
       verify(auth.requests[3].url.indexOf("/devicecode") >= 0)
       verify(auth.requests[3].scope.indexOf("offline_access") >= 0)
+      verify(auth.requests[3].scope.indexOf("openid") >= 0)
       verify(auth.requests[3].scope.indexOf("Calendars.ReadWrite") >= 0)
       verify(auth.requests[3].scope.indexOf("outlook.office.com") < 0)
       compare(auth.userCode, "CODE4")
@@ -179,7 +192,63 @@ Item {
       compare(auth.successes, 1, "the mail sign-in is in")
       compare(auth.unavailable, 0, "the account is not told its session is gone")
       compare(auth.graphConsentNeeded, true, "and the settings page still offers Graph")
-      verify(auth.lastError.indexOf("cancelled") >= 0)
+      compare(auth.lastError, "", "the mailbox's own error is not Graph's")
+      compare(auth.refusals.length, 1)
+      verify(auth.refusals[0].indexOf("cancelled") >= 0, auth.refusals[0])
+      verify(auth.refusals[0].indexOf("admin approval") >= 0, auth.refusals[0])
+    }
+
+    function test_cancelling_the_graph_check_keeps_the_mail_sign_in() {
+      var auth = fresh({ deferGraphCheck: true })
+      signInForMail(auth)
+      compare(auth.loginBusy, true, "the check is under way")
+      compare(auth.successes, 0)
+      var graphError = ""
+      auth.withGraphToken(function(token, error) { graphError = error })
+      auth.cancelLogin()
+      compare(auth.loggedIn, true)
+      compare(auth.successes, 1, "the mail half is in and is said so")
+      compare(auth.loginBusy, false)
+      compare(graphError, "Sign-in cancelled")
+    }
+
+    function test_a_graph_waiter_parked_behind_a_failed_sign_in_is_answered() {
+      var auth = fresh({ entrySettings: { tenant: "organizations", send: "" } })
+      auth.beginLogin()
+      var graphError = ""
+      auth.withGraphToken(function(token, error) { graphError = error })
+      compare(graphError, "", "parked behind the sign-in")
+      auth.declineCode = true
+      auth.pollDeviceCode()
+      compare(auth.loginBusy, false)
+      compare(auth.loggedIn, false)
+      compare(auth.unavailable, 1)
+      verify(graphError !== "", "answered by what ended the sign-in")
+    }
+
+    function test_the_second_code_entered_as_another_account_is_refused() {
+      var auth = fresh({ codeEnteredAs: "bob@example.test" })
+      signInForMail(auth)
+      compare(auth.devicePurpose, "graph")
+      auth.pollDeviceCode()
+      compare(auth.graphAccessToken, "", "not filed as the mailbox's")
+      compare(auth.loggedIn, true)
+      compare(auth.accessToken, "mail-token")
+      compare(auth.successes, 1)
+      compare(auth.graphConsentNeeded, true)
+      compare(auth.refusals.length, 1)
+      verify(auth.refusals[0].indexOf("bob@example.test") >= 0, auth.refusals[0])
+      compare(auth.keyringJobs.length + (auth.keyringJob ? 1 : 0), 1, "the mail token's store alone")
+    }
+
+    function test_a_saved_session_not_restored_yet_signs_in_for_mail_first() {
+      var auth = fresh({ entrySettings: { tenant: "organizations", send: "" } })
+      auth.graphConsentNeeded = true
+      auth.savedSessionPresent = true
+      auth.loggedIn = false
+      auth.beginLogin()
+      compare(auth.devicePurpose, "mail")
+      verify(auth.requests[0].scope.indexOf("outlook.office.com") >= 0)
     }
 
     function test_cancelling_the_second_code_keeps_the_mail_sign_in() {
