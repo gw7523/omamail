@@ -135,6 +135,11 @@ assert.ok(microsoft.deviceAuthorizationBody(clientId, microsoft.SCOPES).indexOf(
   "the device-code request names the mail resource alone; two resources are refused (AADSTS28000)")
 assert.ok(microsoft.GRAPH_SIGN_IN_SCOPES.indexOf("offline_access") >= 0)
 assert.ok(microsoft.GRAPH_SIGN_IN_SCOPES.indexOf("openid") >= 0, "an id token names who entered the code")
+assert.ok(microsoft.GRAPH_SIGN_IN_SCOPES.indexOf("profile") >= 0 && microsoft.GRAPH_SIGN_IN_SCOPES.indexOf("email") >= 0,
+  "and by name where the mail session's id is not known")
+assert.ok(microsoft.SCOPES.indexOf("openid") >= 0, "the mail token comes with the account's id")
+deepEqual(microsoft.missingMailScopes("https://outlook.office.com/IMAP.AccessAsUser.All https://outlook.office.com/SMTP.Send"), [],
+  "a token answer lists resource scopes alone")
 assert.ok(microsoft.GRAPH_SIGN_IN_SCOPES.indexOf("https://graph.microsoft.com/Mail.Send") >= 0)
 assert.ok(microsoft.deviceAuthorizationBody(clientId, microsoft.GRAPH_SIGN_IN_SCOPES).indexOf("outlook.office.com") < 0)
 // A refusal for want of consent is told apart from a dead session, by the
@@ -165,6 +170,16 @@ assert.strictEqual(microsoft.signedInAs("not a token"), "")
 assert.strictEqual(microsoft.sameAccount(idToken({ preferred_username: "alice@example.test" }), "Alice@example.test"), true)
 assert.strictEqual(microsoft.sameAccount(idToken({ preferred_username: "bob@example.test" }), "alice@example.test"), false)
 assert.strictEqual(microsoft.sameAccount("", "alice@example.test"), true, "no name cannot be told and is let through")
+// By id where the mail session's is known: a name means nothing then.
+assert.strictEqual(microsoft.accountKey(idToken({ tid: "tenant-1", oid: "user-1" })), "tenant-1/user-1")
+assert.strictEqual(microsoft.accountKey(idToken({ oid: "user-1" })), "")
+assert.strictEqual(microsoft.sameAccount(idToken({ tid: "tenant-1", oid: "user-1", preferred_username: "jane@contoso.onmicrosoft.com" }),
+  "jane@contoso.com", "tenant-1/user-1"), true, "the same account under another name")
+assert.strictEqual(microsoft.sameAccount(idToken({ tid: "tenant-1", oid: "user-2", preferred_username: "alice@example.test" }),
+  "alice@example.test", "tenant-1/user-1"), false, "another account under the same name")
+assert.strictEqual(microsoft.sameAccount(idToken({ preferred_username: "alice@example.test" }), "alice@example.test", "tenant-1/user-1"),
+  false, "no id where one is expected")
+assert.ok(microsoft.otherAccountMessage("", "alice@example.test").indexOf("another Microsoft account") >= 0)
 assert.ok(microsoft.otherAccountMessage("bob@example.test", "alice@example.test").indexOf("bob@example.test") >= 0)
 assert.strictEqual(microsoft.parseTokenResponse(200, JSON.stringify({ access_token: "a", id_token: "h.p.s" }), "").idToken, "h.p.s")
 assert.ok(microsoft.refreshTokenBody(clientId, "r", microsoft.SCOPES).indexOf("graph.microsoft.com") < 0,

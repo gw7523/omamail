@@ -138,6 +138,10 @@ Item {
       host.auth.loggedIn = false
       compare(signIn.text, "Sign in with Microsoft...",
         "signed out, the button is the sign-in whatever Graph said")
+      host.auth.loggedIn = true
+      compare(signIn.enabled, true)
+      host.auth.refreshBusy = true
+      compare(signIn.enabled, false, "not offered while a refresh is under way, which would make it do nothing")
     }
   }
 }

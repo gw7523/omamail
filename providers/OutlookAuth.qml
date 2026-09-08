@@ -44,6 +44,13 @@ Item {
   property string devicePurpose: "mail"
   property bool graphConsentNeeded: false
   property bool graphRoundOfSignIn: false
+  // A Graph sign-in asked for from the setup page, on a mailbox that is
+  // signed in and stays so: not `loginBusy`, which would take the mailbox
+  // out of service for the code's duration.
+  property bool graphRoundBusy: false
+  // The mail session's account, by tenant and object id, from the id
+  // token that came with its token: what the Graph sign-in is held to.
+  property string accountKey: ""
 
   readonly property string authMode: "oauth2"
   readonly property bool configured: Imap.validateSettings(settings).ok
@@ -82,6 +89,7 @@ Item {
   property string pendingAccessToken: ""
   property string pendingRefreshToken: ""
   property double pendingExpiresIn: 0
+  property string pendingIdToken: ""
 
   // The requests in flight, each answered on its own: a refresh and a Graph
   // exchange may overlap, and neither's answer is dropped for the other's.
@@ -125,6 +133,7 @@ Item {
     graphAccessToken = ""
     graphAccessTokenExpiresAt = 0
     graphConsentNeeded = false
+    accountKey = ""
   }
 
   // ------------------------------------------------------------- Graph
@@ -168,14 +177,14 @@ Item {
     var next = graphWaiters.slice()
     next.push(callback)
     graphWaiters = next
-    if (graphLookupProcess || loginBusy) return
+    if (graphLookupProcess || loginBusy || graphRoundBusy) return
     startGraphLookup()
   }
 
   function startGraphLookup() {
     if (graphLookupProcess || graphWaiters.length === 0) return
     // Behind a sign-in, the waiters are answered by whatever ends it.
-    if (loginBusy) return
+    if (loginBusy || graphRoundBusy) return
     if (keyringJob || keyringJobs.length > 0) {
       graphQueued = true
       return
@@ -217,13 +226,16 @@ Item {
           // For want of consent is the one refusal a sign-in mends; the
           // setup page offers it while this is set.
           if (result.consentRequired) root.graphConsentNeeded = true
+          // A dead session is Microsoft's own words for it, not a missing
+          // permission.
           root.finishGraphWaiters("", root.safeError(result.consentRequired
-            ? Microsoft.graphConsentMessage()
-            : (result.invalidGrant ? Microsoft.graphScopeMessage() : result.error)))
+            ? Microsoft.graphConsentMessage() : result.error))
           return
         }
         if (Microsoft.missingGraphScope(result.scope)) {
-          root.finishGraphWaiters("", Microsoft.graphScopeMessage())
+          // Issued without the permission: what a Graph sign-in collects.
+          root.graphConsentNeeded = true
+          root.finishGraphWaiters("", Microsoft.graphConsentMessage())
           return
         }
         root.acceptGraphToken(result)
@@ -251,17 +263,18 @@ Item {
         if (!root.isCurrent(context) || !root.sessionEnabled) return
         var result = Microsoft.parseTokenResponse(status, text, refreshToken)
         refreshToken = ""
-        if (!result.ok && result.consentRequired) {
+        // Refused for want of consent, or issued without the permission:
+        // either is what the second code collects.
+        if ((!result.ok && result.consentRequired) || (result.ok && Microsoft.missingGraphScope(result.scope))) {
           root.graphConsentNeeded = true
           root.graphRoundOfSignIn = true
           root.startDeviceFlow("graph")
           return
         }
-        if (result.ok && !Microsoft.missingGraphScope(result.scope)) {
+        if (result.ok) {
           root.acceptGraphToken(result)
         } else {
-          var message = result.ok ? Microsoft.graphScopeMessage()
-            : "Microsoft Graph could not be checked: " + root.safeError(result.error) + ". Sending will ask again"
+          var message = "Microsoft Graph could not be checked: " + root.safeError(result.error) + ". Sending will ask again"
           root.finishGraphWaiters("", message)
           root.graphRefused(message)
         }
@@ -278,7 +291,7 @@ Item {
     // The mail sign-in is verified by logging in to the mailbox with its
     // token; this one by the name on its id token, since a code entered
     // as someone else would file that someone's token as the mailbox's.
-    if (!Microsoft.sameAccount(result.idToken, configuredEmail)) {
+    if (!Microsoft.sameAccount(result.idToken, configuredEmail, accountKey)) {
       failGraphRound(Microsoft.otherAccountMessage(Microsoft.signedInAs(result.idToken), configuredEmail))
       return
     }
@@ -288,6 +301,7 @@ Item {
     }
     cancelDeviceLogin()
     loginBusy = false
+    graphRoundBusy = false
     lastError = ""
     acceptGraphToken(result)
     var afterSignIn = graphRoundOfSignIn
@@ -300,6 +314,7 @@ Item {
   function failGraphRound(reason) {
     var message = Microsoft.graphRefusedMessage(safeError(reason || "Microsoft sign-in failed"))
     loginBusy = false
+    graphRoundBusy = false
     cancelDeviceLogin()
     finishGraphWaiters("", message)
     graphRefused(message)
@@ -508,6 +523,8 @@ Item {
   }
 
   function acceptToken(result) {
+    var key = Microsoft.accountKey(result.idToken)
+    if (key !== "") accountKey = key
     accessToken = result.accessToken
     accessTokenExpiresAt = Date.now() + result.expiresIn * 1000
     loggedIn = true
@@ -526,7 +543,7 @@ Item {
   }
 
   function beginLogin() {
-    if (loginBusy || refreshBusy) return
+    if (loginBusy || graphRoundBusy || refreshBusy) return
     if (!credentialsPresent) {
       lastError = "Add the mailbox address and Microsoft OAuth client ID first"
       return
@@ -539,11 +556,20 @@ Item {
     // asked for is Graph's, and the mail session stands. A saved session
     // not restored yet signs in for mail first, whatever Graph said.
     var forGraph = graphConsentNeeded && loggedIn
+    if (forGraph) {
+      // The mailbox stays in service: nothing of the mail session is let
+      // go of, and only Graph's code is busy.
+      lastError = ""
+      graphRoundOfSignIn = false
+      graphRoundBusy = true
+      startDeviceFlow("graph")
+      return
+    }
     cancelLogin()
     sessionEnabled = true
     lastError = ""
     loginBusy = true
-    startDeviceFlow(forGraph ? "graph" : "mail")
+    startDeviceFlow("mail")
   }
 
   // One device-code round: the code and the page to enter it on, then the
@@ -573,7 +599,7 @@ Item {
   }
 
   function pollDeviceCode() {
-    if (!loginBusy || deviceCode === "") return
+    if (!(loginBusy || graphRoundBusy) || deviceCode === "") return
     if (Date.now() >= deviceExpiresAt) {
       failLogin("The Microsoft sign-in code expired. Please try again")
       return
@@ -610,6 +636,7 @@ Item {
         root.pendingAccessToken = result.accessToken
         root.pendingRefreshToken = result.refreshToken
         root.pendingExpiresIn = result.expiresIn
+        root.pendingIdToken = result.idToken
         // The code has been entered: what the page shows from here is the
         // mailbox being verified, or Graph's own code.
         root.deviceCode = ""
@@ -629,7 +656,8 @@ Item {
     var result = ({
       accessToken: pendingAccessToken,
       refreshToken: pendingRefreshToken,
-      expiresIn: pendingExpiresIn
+      expiresIn: pendingExpiresIn,
+      idToken: pendingIdToken
     })
     clearPendingToken()
     sessionChecked = true
@@ -651,6 +679,7 @@ Item {
     pendingAccessToken = ""
     pendingRefreshToken = ""
     pendingExpiresIn = 0
+    pendingIdToken = ""
   }
 
   function cancelDeviceLogin() {
@@ -696,6 +725,7 @@ Item {
     }
     refreshBusy = false
     loginBusy = false
+    graphRoundBusy = false
     finishWaiters("", "Sign-in cancelled")
     // Graph's waiters, parked behind the sign-in or the Graph round's own,
     // are answered either way.

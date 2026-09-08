@@ -11,7 +11,10 @@ var AUTHORITY = "https://login.microsoftonline.com/" + TENANT + "/oauth2/v2.0"
 var DEVICE_URL = AUTHORITY + "/devicecode"
 var TOKEN_URL = AUTHORITY + "/token"
 
+// `openid` brings an id token with each mail token, naming the account by
+// its object id: what the Graph sign-in's code is held to.
 var SCOPES = [
+  "openid",
   "offline_access",
   "https://outlook.office.com/IMAP.AccessAsUser.All",
   "https://outlook.office.com/SMTP.Send"
@@ -41,9 +44,11 @@ var GRAPH_SCOPES = [
 // else from the mailbox's settings when the calendar's exchange is refused.
 // Consent is per user and client, not per token: once given, either
 // sign-in's refresh token exchanges for either resource.
-// `openid` brings an id token naming the account that entered the code,
-// so a code entered as someone else is refused, not filed as the mailbox.
-var GRAPH_SIGN_IN_SCOPES = ["openid", "offline_access"].concat(GRAPH_SCOPES)
+// `openid` brings an id token naming the account that entered the code —
+// by object id, held to the mail sign-in's; by name (`profile`, `email`)
+// where the mail session's id is not known — so a code entered as someone
+// else is refused, not filed as the mailbox.
+var GRAPH_SIGN_IN_SCOPES = ["openid", "profile", "email", "offline_access"].concat(GRAPH_SCOPES)
 
 function normalizeTenant(value) {
   var text = trimmed(value).toLowerCase()
@@ -274,16 +279,30 @@ function signedInAs(idToken) {
   return ""
 }
 
-// Whether the id token names the mailbox's own account — or names none,
-// which cannot be told and is let through.
-function sameAccount(idToken, email) {
+// The account an id token names by tenant and object id — what does not
+// change when a name does — or "" when it carries neither.
+function accountKey(idToken) {
+  var claims = idTokenClaims(idToken)
+  if (!claims) return ""
+  var tenant = trimmed(claims.tid)
+  var object = trimmed(claims.oid)
+  return tenant !== "" && object !== "" ? tenant + "/" + object : ""
+}
+
+// Whether the id token names the mailbox's own account: the one the mail
+// session is, by id, where that is known; else by name against the
+// address — or names none, which cannot be told and is let through.
+function sameAccount(idToken, email, mailKey) {
+  var key = trimmed(mailKey)
+  if (key !== "") return accountKey(idToken) === key
   var who = signedInAs(idToken)
   return who === "" || who === trimmed(email).toLowerCase()
 }
 
 function otherAccountMessage(who, email) {
-  return "the second code was entered as " + String(who || "") + ", not " + trimmed(email)
-    + ". Sign in to Microsoft as the mailbox's own account"
+  var name = String(who || "")
+  return "the second code was entered as " + (name !== "" ? name : "another Microsoft account")
+    + ", not " + trimmed(email) + ". Sign in to Microsoft as the mailbox's own account"
 }
 
 function graphScopeNames() {
@@ -329,7 +348,8 @@ function missingMailScopes(granted) {
   var missing = []
   for (var i = 0; i < SCOPES.length; i++) {
     var scope = SCOPES[i]
-    if (scope === "offline_access") continue
+    // Not resource scopes: a token answer does not list them.
+    if (scope === "offline_access" || scope === "openid") continue
     if (have.indexOf(scope.toLowerCase()) < 0) missing.push(scope)
   }
   return missing

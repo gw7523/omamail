@@ -21,11 +21,21 @@ Item {
       // Who entered the second code, when not the mailbox's own account;
       // whether the Graph check after the mail sign-in is left unanswered.
       property string codeEnteredAs: ""
+      property string codeEnteredOid: ""
+      // What the Graph exchange grants when not the full scope; whether the
+      // saved Graph session is dead.
+      property string partialGrant: ""
       property bool deferGraphCheck: false
       property var refusals: []
       onGraphRefused: function(reason) { refusals = refusals.concat([reason]) }
-      function idToken(name) {
-        return "h." + Qt.btoa(JSON.stringify({ preferred_username: name })).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "") + ".s"
+      function idToken(name, oid) {
+        var claims = { preferred_username: name, tid: "tenant-1", oid: oid }
+        return "h." + Qt.btoa(JSON.stringify(claims)).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "") + ".s"
+      }
+      function graphIdToken() {
+        var name = codeEnteredAs !== "" ? codeEnteredAs : "alice@example.test"
+        var oid = codeEnteredOid !== "" ? codeEnteredOid : (codeEnteredAs !== "" ? "oid-" + codeEnteredAs : "oid-alice")
+        return idToken(name, oid)
       }
       // Whether the saved session is dead: a bad grant of the other kind.
       property bool deadSession: false
@@ -72,7 +82,7 @@ Item {
           callback(200, JSON.stringify({ access_token: graphCode ? "graph-token" : "mail-token",
             refresh_token: graphCode ? "refresh-graph" : "refresh-mail", expires_in: 3600,
             scope: graphCode ? graphScopes() : mailScopes(),
-            id_token: graphCode ? idToken(codeEnteredAs !== "" ? codeEnteredAs : "alice@example.test") : "" }))
+            id_token: graphCode ? graphIdToken() : idToken("alice@example.test", "oid-alice") }))
           return
         }
         if (params.grant_type === "refresh_token") {
@@ -88,7 +98,8 @@ Item {
           }
           callback(200, JSON.stringify({ access_token: forGraph ? "graph-token" : "mail-token",
             refresh_token: "refresh-rotated", expires_in: 3600,
-            scope: forGraph ? graphScopes() : mailScopes() }))
+            scope: forGraph ? (partialGrant !== "" ? partialGrant : graphScopes()) : mailScopes(),
+            id_token: forGraph ? "" : idToken("alice@example.test", "oid-alice") }))
           return
         }
         callback(400, "{}")
@@ -281,12 +292,15 @@ Item {
       auth.requests = []
       auth.beginLogin()
       compare(auth.devicePurpose, "graph")
+      compare(auth.loginBusy, false, "the mailbox stays in service")
+      compare(auth.graphRoundBusy, true)
       var asked = JSON.stringify(auth.requests)
       verify(auth.requests[0].url.indexOf("/devicecode") >= 0, asked)
       verify(auth.requests[0].scope.indexOf("graph.microsoft.com") >= 0, asked)
       verify(auth.requests[0].scope.indexOf("outlook.office.com") < 0, asked)
       auth.pollDeviceCode()
       compare(auth.loginBusy, false)
+      compare(auth.graphRoundBusy, false)
       compare(auth.graphConsentNeeded, false)
       compare(auth.graphAccessToken, "graph-token")
       compare(auth.accessToken, "mail-token")
@@ -310,6 +324,37 @@ Item {
       lookup.exited(0)
       compare(auth.graphConsentNeeded, false)
       verify(answer !== "")
+      verify(answer.indexOf("Mail.Send") < 0, "a dead session is not a missing permission: " + answer)
+      verify(answer.indexOf("Sign in again") >= 0, answer)
+    }
+
+    function test_a_graph_token_issued_without_the_permission_asks_the_second_code() {
+      var auth = fresh({ graphConsented: true, partialGrant: "https://graph.microsoft.com/User.Read" })
+      signInForMail(auth)
+      compare(auth.devicePurpose, "graph", "what the exchange did not grant, the code collects")
+      compare(auth.graphConsentNeeded, true)
+      auth.partialGrant = ""
+      auth.pollDeviceCode()
+      compare(auth.successes, 1)
+      compare(auth.graphAccessToken, "graph-token")
+    }
+
+    function test_the_same_account_under_another_name_is_accepted() {
+      var auth = fresh({ codeEnteredAs: "alice@contoso.onmicrosoft.com", codeEnteredOid: "oid-alice" })
+      signInForMail(auth)
+      compare(auth.accountKey, "tenant-1/oid-alice", "the mail sign-in's id token names the account")
+      auth.pollDeviceCode()
+      compare(auth.graphAccessToken, "graph-token")
+      compare(auth.refusals.length, 0)
+    }
+
+    function test_another_account_under_the_same_name_is_refused() {
+      var auth = fresh({ codeEnteredAs: "alice@example.test", codeEnteredOid: "oid-someone-else" })
+      signInForMail(auth)
+      auth.pollDeviceCode()
+      compare(auth.graphAccessToken, "")
+      compare(auth.refusals.length, 1)
+      verify(auth.refusals[0].indexOf("not alice@example.test") >= 0, auth.refusals[0])
     }
 
     function test_signing_out_forgets_what_graph_said() {

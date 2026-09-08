@@ -23,7 +23,7 @@ Column {
 
   readonly property var auth: service ? service.auth : null
   readonly property bool signedIn: !!auth && auth.loggedIn
-  readonly property bool busy: !!auth && auth.loginBusy
+  readonly property bool busy: !!auth && (auth.loginBusy || auth.graphRoundBusy === true)
   // Signed in for mail, and Microsoft refused Graph for want of consent:
   // the sign-in button stays, as the Graph sign-in.
   readonly property bool graphConsentNeeded: root.signedIn && !!auth && auth.graphConsentNeeded === true
@@ -370,7 +370,8 @@ Column {
       objectName: "outlook-sign-in"
       visible: !root.signedIn || root.graphConsentNeeded
       text: root.graphConsentNeeded ? "Allow Microsoft Graph..." : "Sign in with Microsoft..."
-      enabled: !root.busy && addressField.text.trim() !== ""
+      enabled: !root.busy && !(root.auth && root.auth.refreshBusy === true)
+        && addressField.text.trim() !== ""
         && (root.usingBuiltinClient || clientIdField.text.trim() !== "")
       foreground: root.textColor
       bordered: true

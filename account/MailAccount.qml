@@ -2917,6 +2917,7 @@ Item {
       }
       onLoggedOut: root.clearNotice()
       onSessionUnavailable: function(reason) { root.fail(reason) }
+      onGraphRefused: function(reason) { root.note(reason) }
     }
   }
 
