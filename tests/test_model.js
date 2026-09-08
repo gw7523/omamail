@@ -1450,3 +1450,33 @@ assert.strictEqual(model.monitoredNote([]), "")
   deepEqual(model.migrateMonitoredIds(["Work", "Work/2026"], flatBefore, flatAfter, "Work", "Jobs", ""), ["Jobs", "Work/2026"])
   deepEqual(model.migrateMonitoredIds(null, before, after, "Work", "Jobs", "/"), [])
 }
+
+// ------------------------------------------------------------ type to find
+{
+  assert.ok(model.fuzzyScore("sfl", "SFL") > 0)
+  assert.ok(model.fuzzyScore("sfl", "jack@the-sfl.com") > 0)
+  assert.ok(model.fuzzyScore("sfl", "jack@example.com") === 0)
+  assert.ok(model.fuzzyScore("wk", "Work") > 0, "letters in order, not adjacent")
+  assert.ok(model.fuzzyScore("kw", "Work") === 0, "but in order")
+  assert.ok(model.fuzzyScore("work", "Work") > model.fuzzyScore("work", "Homework"), "the start of the text beats the middle")
+  assert.ok(model.fuzzyScore("inv", "Work/Invoices") > model.fuzzyScore("inv", "Convinced"), "the start of a word beats the middle of one")
+  assert.strictEqual(model.fuzzyScore("", "anything"), 1)
+  assert.strictEqual(model.fuzzyScore("a", ""), 0)
+
+  const rows = [
+    { name: "Inbox", key: "inbox" },
+    { name: "Work", id: "Work" },
+    { name: "Work/Invoices", id: "Work/Invoices" },
+    { label: "SFL", email: "jack@the-sfl.com", name: "" },
+    { label: "jack", email: "jack@icloud.com", name: "jack" }]
+  deepEqual(model.filterRows(rows, "").map(r => r.sourceIndex), [0, 1, 2, 3, 4], "nothing typed keeps every row in place")
+  deepEqual(model.filterRows(rows, "inv").map(r => r.sourceIndex), [2])
+  deepEqual(model.filterRows(rows, "work").map(r => r.sourceIndex), [1, 2], "the shorter name first, then its child")
+  deepEqual(model.filterRows(rows, "sfl").map(r => r.sourceIndex), [3], "an address is searched too")
+  deepEqual(model.filterRows(rows, "jack").map(r => r.sourceIndex), [4, 3], "the name outranks an address that only contains it")
+  deepEqual(model.filterRows(rows, "zzz"), [])
+  deepEqual(model.filterRows(null, "x"), [])
+  assert.strictEqual(model.filterRows(rows, "  ").length, 5, "blank is nothing typed")
+  assert.strictEqual(model.filterRows(rows, "inv")[0].index, undefined, "no `index` on a row: a Repeater owns that word")
+  assert.strictEqual(rows[2].sourceIndex, undefined, "the rows given are not written on")
+}

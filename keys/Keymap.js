@@ -161,7 +161,8 @@ var BINDINGS = [
   // One key, not nine, and modified rather than bare. Switching mailboxes is
   // not frequent enough to spend a letter on — the bare ones are the scarce
   // thing here — and not a chord either, because it opens a list the keyboard
-  // then walks: `j`/`k` to move, `Enter` or `o` to take one.
+  // then walks — or types into: letters narrow it, the arrows move, `Enter`
+  // takes one.
   { id: "switchAccount", keys: ["Alt+A"], contexts: MAIL,
     group: "Going", label: "Switch account" },
   // The message agent, on the cursor row. A popup, so the same shape as the

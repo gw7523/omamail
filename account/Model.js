@@ -1825,3 +1825,57 @@ function monitoredNote(grown) {
   return parts.join(", ") + (more > 0 ? " and " + more + " more" : "")
 }
 
+
+// ------------------------------------------------------------ type to find
+
+// How well a few typed letters name a row. Every letter must appear in the
+// text, in order; the closer together and the nearer the start of words they
+// fall, the better. Zero is no match. The letters are compared case-folded,
+// so "sfl" finds "SFL" and "the-sfl.com" alike.
+function fuzzyScore(query, text) {
+  var needle = String(query || "").toLowerCase().replace(/\s+/g, "")
+  var hay = String(text || "").toLowerCase()
+  if (needle === "") return 1
+  if (hay === "") return 0
+  var at = hay.indexOf(needle)
+  if (at >= 0) return 1000 - at + (at === 0 || /[^a-z0-9]/.test(hay.charAt(at - 1)) ? 200 : 0)
+  var score = 0
+  var from = 0
+  var last = -2
+  for (var i = 0; i < needle.length; i++) {
+    var found = hay.indexOf(needle.charAt(i), from)
+    if (found < 0) return 0
+    score += 10
+    if (found === last + 1) score += 8
+    if (found === 0 || /[^a-z0-9]/.test(hay.charAt(found - 1))) score += 12
+    last = found
+    from = found + 1
+  }
+  return score
+}
+
+// The rows a typed query keeps, best first, each remembering where it sat
+// in the full list — `sourceIndex`, not `index`, which a Repeater hands its
+// delegate for the row's place on screen — so choosing one still names the
+// same thing. An empty query keeps every row in its own order. A row is
+// matched on whatever it carries: its name, the name it was given, its
+// address.
+function filterRows(rows, query) {
+  var list = Array.isArray(rows) ? rows : []
+  var typed = String(query || "").trim()
+  var out = []
+  for (var i = 0; i < list.length; i++) {
+    var row = list[i]
+    if (!row) continue
+    var text = [row.name, row.label, row.email].filter(function(v) { return v !== undefined && v !== null && String(v) !== "" }).join(" ")
+    var score = typed === "" ? 1 : fuzzyScore(typed, text)
+    if (score <= 0) continue
+    var kept = {}
+    for (var key in row) kept[key] = row[key]
+    kept.sourceIndex = i
+    kept.score = score
+    out.push(kept)
+  }
+  if (typed !== "") out.sort(function(a, b) { return b.score - a.score || a.sourceIndex - b.sourceIndex })
+  return out
+}

@@ -200,9 +200,13 @@ read with a mouse would be the one screen here that contradicts the rest.
 **The account switcher is not on that list, and cannot be.** It is a
 `QQC.Popup`, and an open popup takes every key before the shortcut map sees it —
 `focus` true or false, bare key or modified. So `Alt+A` opens it through the
-table like any other key, and from there `j`, `k`, `Enter` and `o` come from a
-`Keys` handler on the popup's own `contentItem`: the one place in this window
-where the rule at the top of this document runs backwards.
+table like any other key, and from there the keys come from the search line at
+the top of the popup — the one place in this window where the rule at the top
+of this document runs backwards. Letters narrow the rows to the mailboxes they
+name, by the name they were given or their address; `Down` and `Up`, or `Ctrl`
+with `j`, `k`, `n` or `p`, walk what is left; `Enter` opens the row the cursor
+is on. A bare `j` or `k` is a letter there now, as it has to be for "jack" to
+find a mailbox.
 `tests/qml/tst_popup_keys.qml` holds the Qt behaviour that makes it so, and
 `Model.wrappedIndex` holds the only decision in it — the cursor wraps, where the
 message list clamps.
