@@ -66,6 +66,8 @@ Item {
     contentDirection: Direction.MODE_DEFAULT,
     defaultQuery: "in:inbox",
     agentCommand: "",
+    suggestEvents: false,
+    lookCommand: "",
     notifyNewMail: "On",
     oauthPort: 9481,
     undoSendSeconds: 10,
@@ -85,6 +87,30 @@ Item {
   // agent button is drawn anywhere. docs/AGENT.md.
   readonly property string agentCommand: String(settings ? settings.agentCommand || "" : "").trim()
   readonly property bool hasAgent: Agent.hasAgent(agentCommand)
+  // Whether a message opened in the reader is handed to the agent to look
+  // for calendar events in. Off until the owner turns it on: the message
+  // text leaves the window for the agent command.
+  readonly property bool suggestEvents: !!settings && settings.suggestEvents === true
+  function setSuggestEvents(value) { persistSetting("suggestEvents", value === true) }
+  // What a look runs: the owner's own line for looks, or the default
+  // agent's preset at its cheapest model, or the default agent as it is.
+  readonly property string lookCommand: Agent.lookCommand(agentCommand, settings ? settings.lookCommand : "")
+  readonly property string lookCommandOwn: String(settings && settings.lookCommand ? settings.lookCommand : "").trim()
+  function setLookCommand(value) { persistSetting("lookCommand", String(value || "").trim()) }
+  readonly property bool agentStarting: agentRunner.starting
+  readonly property var eventSuggestions: eventSuggester.suggestions
+  function dismissSuggestion(key) { eventSuggester.dismiss(key) }
+  function addSuggestedEvent(suggestion) { return eventSuggester.compose(suggestion) }
+
+  // A look for events in the message an account is reading, started by the
+  // suggester once its gates are passed. Whose it is travels with it.
+  function startEventsJob(account, summary, text) {
+    if (!account || !summary || !hasAgent) return false
+    var id = String(summary.id || "")
+    var line = Agent.eventsPayload(summary, String(text || ""), account.accountEmail,
+      Agent.folderOf(id, account.mailboxKey, account.providerId), lookCommand, account.accountId)
+    return agentRunner.start(line)
+  }
   // The open account's jobs by message id — another account's job about
   // the same id is not this row's, however the id reads.
   readonly property var agentJobs: agentRunner.byMessage
@@ -2117,6 +2143,11 @@ Item {
     stdout: StdioCollector { waitForEnd: true }
     stderr: StdioCollector { waitForEnd: true }
     onExited: root.agentToolsFound = Agent.foundBinaries(String(stdout.text || ""))
+  }
+
+  EventSuggester {
+    id: eventSuggester
+    service: root
   }
 
   AgentRunner {

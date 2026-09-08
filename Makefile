@@ -35,6 +35,7 @@ QML_FILES := Service.qml BarWidget.qml App.qml \
 	components/ConversationRail.qml \
 	components/ReaderNotice.qml \
 	components/InviteCard.qml \
+	components/EventSuggestionCard.qml \
 	components/ReaderBlankSlate.qml \
 	components/ReaderSkeleton.qml \
 	components/ComposeView.qml \
@@ -54,6 +55,7 @@ QML_FILES := Service.qml BarWidget.qml App.qml \
 	components/AddressMenu.qml \
 	components/ComposeAgent.qml \
 	agent/AgentRunner.qml \
+	agent/EventSuggester.qml \
 	components/AccountRemovalDialog.qml \
 	components/BackBar.qml \
 	components/SettingsPage.qml \

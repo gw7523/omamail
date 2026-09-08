@@ -590,12 +590,32 @@ Item {
       onOpenRequested: function(url) { Qt.openUrlExternally(url) }
     }
 
+    // What the agent found in the message, if the owner asked it to look:
+    // a card per event, with the calendar's composer one press away.
+    EventSuggestionCard {
+      id: suggestionCard
+      objectName: "eventSuggestions"
+      x: root.bodyInset
+      y: inviteCard.visible ? inviteCard.y + inviteCard.height + Style.space(14) : Style.space(24)
+      width: root.bodyWidth
+      suggestions: root.service && root.service.eventSuggestions ? root.service.eventSuggestions : []
+      textColor: root.textColor
+      accentColor: root.accentColor
+      dimColor: root.dimColor
+      dimmerColor: root.dimmerColor
+      panelFontFamily: root.panelFontFamily
+      onAddRequested: function(suggestion) { if (root.service) root.service.addSuggestedEvent(suggestion) }
+      onDismissRequested: function(key) { if (root.service) root.service.dismissSuggestion(key) }
+    }
+
     TextEdit {
       id: bodyText
       x: root.bodyInset + root.bodyOffset
-      y: inviteCard.visible
-        ? inviteCard.y + inviteCard.height + Style.space(14)
-        : Style.space(24)
+      y: suggestionCard.visible
+        ? suggestionCard.y + suggestionCard.height + Style.space(14)
+        : (inviteCard.visible
+          ? inviteCard.y + inviteCard.height + Style.space(14)
+          : Style.space(24))
       width: root.preferredBodyWidth
       readOnly: true
       selectByMouse: true

@@ -59,6 +59,12 @@ Column {
     if (next !== root.service.agentCommand) root.service.setAgentCommand(next)
   }
 
+  function saveLookCommand() {
+    if (!root.service) return
+    var next = String(lookEdit.text || "").trim()
+    if (next !== root.service.lookCommandOwn) root.service.setLookCommand(next)
+  }
+
   function signatureAccount(id) {
     for (var i = 0; i < signatureAccounts.length; i++)
       if (String(signatureAccounts[i].id || "") === String(id || ""))
@@ -978,6 +984,109 @@ Column {
       font.family: root.panelFontFamily
       font.pixelSize: Style.font.caption
       wrapMode: Text.WordWrap
+    }
+
+    // A look is small and frequent, so it runs at the harness's cheapest
+    // model where the preset knows one; a line typed here runs instead.
+    Text {
+      width: parent.width
+      text: "Agent for background looks"
+      color: root.textColor
+      font.family: root.panelFontFamily
+      font.pixelSize: Style.font.bodySmall
+    }
+
+    TextField {
+      id: lookEdit
+      objectName: "settings-look-editor"
+      width: parent.width
+      foreground: root.textColor
+      accent: root.accentColor
+      font.family: root.panelFontFamily
+      font.pixelSize: Style.font.bodySmall
+      placeholderText: root.service && root.service.lookCommand !== "" ? root.service.lookCommand : "the default agent"
+      text: root.service ? root.service.lookCommandOwn : ""
+      onActiveFocusChanged: if (!activeFocus) root.saveLookCommand()
+      onAccepted: root.saveLookCommand()
+    }
+
+    Text {
+      width: parent.width
+      textFormat: Text.PlainText
+      text: "What the search for calendar events in a message you open runs. "
+        + "Empty runs the default agent's harness at its cheapest model with no "
+        + "tools, where a preset knows it — Claude Code at claude-haiku-4-5, "
+        + "Codex at gpt-5.1-codex-mini read-only, Gemini at gemini-2.5-flash — "
+        + "or the default agent as it is."
+      color: root.dimColor
+      font.family: root.panelFontFamily
+      font.pixelSize: Style.font.caption
+      wrapMode: Text.WordWrap
+    }
+
+    // A look at every message opened, on the owner's behalf. Off until it
+    // is turned on, because the message text leaves the window for the
+    // agent command; the switch says in a word which way it stands.
+    Item {
+      objectName: "settings-suggest-events"
+      width: parent.width
+      implicitHeight: suggestText.implicitHeight + Style.space(12)
+
+      Column {
+        id: suggestText
+        anchors.left: parent.left
+        anchors.right: suggestState.left
+        anchors.rightMargin: Style.space(10)
+        anchors.verticalCenter: parent.verticalCenter
+        spacing: Style.space(2)
+
+        Text {
+          width: parent.width
+          text: "Suggest calendar events from mail"
+          color: root.textColor
+          font.family: root.panelFontFamily
+          font.pixelSize: Style.font.bodySmall
+          textFormat: Text.PlainText
+        }
+
+        Text {
+          width: parent.width
+          text: "A message you open that mentions a date is handed to the agent "
+            + "once, in the background; the events it finds show above the "
+            + "message with Add and Dismiss, and Add opens the event composer "
+            + "for you to check and choose a calendar. The message text leaves "
+            + "this window for the agent command."
+          color: root.dimColor
+          font.family: root.panelFontFamily
+          font.pixelSize: Style.font.caption
+          wrapMode: Text.WordWrap
+          textFormat: Text.PlainText
+        }
+      }
+
+      Text {
+        id: suggestState
+        objectName: "suggestEventsState"
+        anchors.right: suggestSwitch.left
+        anchors.rightMargin: Style.space(8)
+        anchors.verticalCenter: parent.verticalCenter
+        text: suggestSwitch.checked ? "On" : "Off"
+        color: root.dimColor
+        font.family: root.panelFontFamily
+        font.pixelSize: Style.font.caption
+      }
+
+      ToggleSwitch {
+        id: suggestSwitch
+        objectName: "suggestEventsSwitch"
+        anchors.right: parent.right
+        anchors.rightMargin: Style.space(10)
+        anchors.verticalCenter: parent.verticalCenter
+        checked: !!root.service && root.service.suggestEvents === true
+        foreground: root.textColor
+        accent: root.accentColor
+        onToggled: if (root.service) root.service.setSuggestEvents(!root.service.suggestEvents)
+      }
     }
   }
 

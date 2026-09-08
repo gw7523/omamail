@@ -80,6 +80,9 @@ Item {
   }
 
   readonly property bool cancelling: canceller.running
+  // Whether a start is in flight: `start` refuses another until it lands,
+  // and a caller with something to start can wait for this to drop.
+  readonly property bool starting: starter.running
 
   function cancel(messageId, owner) {
     var job = jobFor(messageId, owner)

@@ -254,3 +254,120 @@ console.log("test_agent.js attention ok")
   deepEqual(agent.draftJobs([adas, bobs], ""), [])
   deepEqual(agent.draftJobs([{ id: "legacy", kind: "draft", created: 1 }], A), [], "no owner, no row")
 }
+
+// ------------------------------------------------------------ suggested events
+{
+  // The prefilter: a date or a time in the text, by name, number or
+  // relation; not a word that only looks like one.
+  const yes = ["See you Thursday at 3pm", "Dinner on 12 September", "Sep 12 works for me", "12/09/2026 at the office",
+    "2026-09-12", "call at 14:30", "tomorrow morning", "next week then", "May 12 works", "on Thu, then"]
+  const no = ["I may go", "he sat down and thought", "the sun was out", "no dates in here", "", "march on", "a dec in the code"]
+  for (const text of yes) assert.strictEqual(agent.mentionsDate(text), true, text)
+  for (const text of no) assert.strictEqual(agent.mentionsDate(text), false, text)
+
+  const now = Date.parse("2026-09-07T12:00:00Z")
+  assert.strictEqual(agent.tooOldForEvents(now - 3 * 86400000, now), false)
+  assert.strictEqual(agent.tooOldForEvents(now - 90 * 86400000, now), true)
+  assert.strictEqual(agent.tooOldForEvents(0, now), true, "no date known is no reason to spend a look")
+
+  // The look is a background job: no glyph, no glow, no row, but it counts
+  // as running, and one per message is enough.
+  const look = { id: "e1", kind: "events", messageId: "m1", accountId: A, state: "running", created: 3 }
+  const done = { id: "e0", kind: "events", messageId: "m2", accountId: A, state: "done", created: 2,
+    events: [{ title: "Dinner", startMs: 1789232400000, endMs: 1789239600000 }] }
+  assert.strictEqual(agent.isEventsJob(look), true)
+  assert.strictEqual(agent.isEventsJob(running), false)
+  assert.strictEqual(agent.jobFor([look], "m1", A), null)
+  deepEqual(agent.jobsByMessage([look, done], A), {})
+  assert.strictEqual(agent.anyAttention([done], []), false)
+  assert.strictEqual(agent.anyActive([look]), true, "polling still follows it")
+  assert.strictEqual(agent.activeEventsJobs([look, done, running]), 1)
+  assert.strictEqual(agent.hasEventsJob([look], "m1", A), true)
+  assert.strictEqual(agent.hasEventsJob([look], "m1", B), false, "Bob's m1 was not looked at")
+  assert.strictEqual(agent.hasEventsJob([{ id: "x", kind: "events", messageId: "m1", accountId: A, state: "cancelled" }], "m1", A), false,
+    "a cancelled look may be taken again")
+  assert.strictEqual(agent.hasEventsJob([{ id: "x", kind: "events", messageId: "m1", accountId: A, state: "failed" }], "m1", A), false,
+    "and so may one that failed")
+  assert.strictEqual(agent.finishedNote(done), "The agent found an event in the message")
+  assert.strictEqual(agent.finishedNote({ id: "e2", kind: "events", state: "done", events: [], subject: "S" }), "", "nothing found says nothing")
+  assert.strictEqual(agent.finishedNote({ id: "e3", kind: "events", state: "done", subject: "S",
+    events: [{ title: "a" }, { title: "b" }] }), "The agent found 2 events in \u201CS\u201D")
+
+  const line = JSON.parse(agent.eventsPayload({ id: "m1", subject: "Plans", from: { email: "b@x" } }, "Dinner Thu 7pm", "ada@example.com", "INBOX", "claude -p", A))
+  assert.strictEqual(line.events, true)
+  assert.strictEqual(line.messageId, "m1")
+  assert.strictEqual(line.accountId, A)
+  assert.strictEqual(line.kind, undefined, "the runner decides the kind")
+  assert.ok(line.prompt.length > 0)
+  assert.ok(line.message.indexOf("Dinner Thu 7pm") >= 0)
+
+  // The suggestions: the newest finished look at the open message, in its
+  // account, less the dismissed; a Bob look says nothing about Ada's row.
+  const older = { id: "e4", kind: "events", messageId: "m2", accountId: A, state: "done", created: 1,
+    events: [{ title: "Old", startMs: 1, endMs: 2 }] }
+  const bobs = { id: "e5", kind: "events", messageId: "m2", accountId: B, state: "done", created: 9,
+    events: [{ title: "Bob's", startMs: 5, endMs: 6 }] }
+  const found = agent.eventSuggestions([older, done, bobs, look], A, "m2", [])
+  assert.strictEqual(found.length, 1)
+  assert.strictEqual(found[0].title, "Dinner")
+  assert.strictEqual(found[0].key, "e0:0")
+  assert.strictEqual(found[0].jobId, "e0")
+  deepEqual(agent.eventSuggestions([older, done, bobs], A, "m2", ["e0:0"]), [])
+  deepEqual(agent.eventSuggestions([done], A, "m1", []), [])
+  deepEqual(agent.eventSuggestions([done], "", "m2", []), [], "no account owns nothing")
+  deepEqual(agent.eventSuggestions([{ id: "e6", kind: "events", messageId: "m2", accountId: A, state: "done", created: 5,
+    events: [{ title: "", startMs: 1 }, { title: "No start" }] }], A, "m2", []), [], "a title and a start, or no event")
+  const untimed = agent.eventSuggestions([{ id: "e7", kind: "events", messageId: "m2", accountId: A, state: "done", created: 5,
+    events: [{ title: "T", startMs: 1000 }] }], A, "m2", [])
+  assert.strictEqual(untimed[0].endMs, 1000 + 3600000, "an hour when no end was given")
+
+  // When, as the card says it.
+  const sep12 = new Date(2026, 8, 12, 19, 0).getTime()
+  const thisYear = new Date(2026, 8, 7).getTime()
+  assert.strictEqual(agent.suggestionWhen({ startMs: sep12, endMs: sep12 + 3600000 }, thisYear), "Sat 12 Sep, 19:00–20:00")
+  assert.strictEqual(agent.suggestionWhen({ startMs: sep12, endMs: sep12 }, thisYear), "Sat 12 Sep, 19:00")
+  // A whole day runs from midnight to the next: one day, or two.
+  const sep12day = new Date(2026, 8, 12).getTime()
+  assert.strictEqual(agent.suggestionWhen({ startMs: sep12day, endMs: sep12day + 86400000, allDay: true }, thisYear), "Sat 12 Sep (all day)")
+  assert.strictEqual(agent.suggestionWhen({ startMs: sep12day, endMs: sep12day + 2 * 86400000, allDay: true }, thisYear), "Sat 12 Sep – Sun 13 Sep (all day)")
+  assert.strictEqual(agent.suggestionWhen({ startMs: sep12, endMs: sep12 + 26 * 3600000 }, thisYear), "Sat 12 Sep, 19:00 – Sun 13 Sep, 21:00")
+  assert.strictEqual(agent.suggestionWhen({ startMs: sep12, endMs: sep12 + 3600000 }, new Date(2027, 0, 1).getTime()), "Sat 12 Sep 2026, 19:00–20:00")
+  assert.strictEqual(agent.suggestionWhen({ startMs: 0 }, thisYear), "")
+
+  // The composer's fields: a whole day becomes nine to ten, and says so.
+  const timed = agent.eventPrefill({ title: "Dinner", startMs: sep12, endMs: sep12 + 7200000, location: "Luigi's", notes: "Table for 4" })
+  deepEqual(timed, { title: "Dinner", startMs: sep12, endMs: sep12 + 7200000, location: "Luigi's", description: "Table for 4", accountId: "" })
+  const whole = agent.eventPrefill({ title: "Offsite", startMs: new Date(2026, 9, 2).getTime(), endMs: new Date(2026, 9, 3).getTime(), allDay: true }, A)
+  assert.strictEqual(new Date(whole.startMs).getHours(), 9)
+  assert.strictEqual(whole.endMs - whole.startMs, 3600000)
+  assert.strictEqual(whole.description, "All day, as the message put it.")
+  assert.strictEqual(whole.accountId, A, "and whose calendar")
+  // Two whole days, and an evening that runs past midnight: the form holds
+  // one day, so the notes carry what the message put.
+  const twoDays = agent.eventPrefill({ title: "Offsite", startMs: new Date(2026, 9, 2).getTime(), endMs: new Date(2026, 9, 4).getTime(), allDay: true })
+  assert.strictEqual(twoDays.description, "All day through Sat 3 Oct, as the message put it.")
+  const late = agent.eventPrefill({ title: "Party", startMs: sep12, endMs: sep12 + 5 * 3600000, notes: "Bring wine" })
+  assert.strictEqual(new Date(late.endMs).getHours(), 23)
+  assert.strictEqual(new Date(late.endMs).getMinutes(), 59)
+  assert.strictEqual(late.description, "Bring wine\n\nThe message has it ending Sun 13 Sep, 00:00.")
+  assert.strictEqual(agent.eventPrefill({ title: "T", startMs: sep12, endMs: sep12 + 3600000 }).accountId, "")
+}
+
+// A look runs at the harness's cheapest model where the preset knows one,
+// the owner's own look command over that, and an unknown command as it is.
+{
+  const claude = agent.presetById("claude").command
+  const look = agent.lookCommand(claude, "")
+  assert.ok(look.indexOf("--model claude-haiku-4-5-20251001") > 0, look)
+  assert.strictEqual(look.indexOf("allowedTools"), -1, "a look runs no tool without asking")
+  assert.strictEqual(agent.lookCommand(claude, " my-look --cheap "), "my-look --cheap")
+  // The harness is known by the program it runs, whatever follows it.
+  assert.strictEqual(agent.lookCommand("claude -p --model opus --dangerously-skip-permissions", ""), look)
+  assert.strictEqual(agent.lookCommand("/usr/local/bin/claude -p", ""), look)
+  assert.ok(agent.lookCommand("codex exec --full-auto --sandbox danger-full-access", "").indexOf("--sandbox read-only") > 0)
+  assert.strictEqual(agent.lookCommand("gemini --yolo -p \"x\"", "").indexOf("--yolo"), -1)
+  assert.strictEqual(agent.lookCommand(agent.presetById("grok").command, ""), agent.presetById("grok").command, "no cheaper model known: the same")
+  assert.strictEqual(agent.lookCommand("my-harness --fast", ""), "my-harness --fast", "a harness no preset knows runs as typed")
+  assert.strictEqual(agent.lookCommand("", ""), "")
+  assert.strictEqual(agent.commandProgram("  /opt/x/claude -p "), "claude")
+}
