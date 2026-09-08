@@ -25,6 +25,8 @@ Item {
       // What the Graph exchange grants when not the full scope; whether the
       // saved Graph session is dead.
       property string partialGrant: ""
+      // What the second code itself grants when not the full scope.
+      property string partialCodeGrant: ""
       // Microsoft lists Graph's scopes short; a mail refresh, or a Graph
       // exchange, left unanswered until the test answers it.
       property bool shortScopes: false
@@ -90,7 +92,7 @@ Item {
           if (graphCode) graphConsented = true
           callback(200, JSON.stringify({ access_token: graphCode ? "graph-token" : "mail-token",
             refresh_token: graphCode ? "refresh-graph" : "refresh-mail", expires_in: 3600,
-            scope: graphCode ? graphScopes() : mailScopes(),
+            scope: graphCode ? (partialCodeGrant !== "" ? partialCodeGrant : graphScopes()) : mailScopes(),
             id_token: graphCode ? graphIdToken() : idToken("alice@example.test", "oid-alice") }))
           return
         }
@@ -322,6 +324,51 @@ Item {
         scope: mailScopesText() }))
       compare(mailAnswer, "mail-token-2|")
       compare(auth.refreshBusy, false)
+    }
+
+    function test_signing_out_under_a_settings_code_with_a_refresh_in_flight_frees_the_sign_in() {
+      var auth = fresh({ entrySettings: { tenant: "organizations", send: "" }, deferMailRefresh: true })
+      auth.accessToken = "mail-token"
+      auth.accessTokenExpiresAt = Date.now() + 3600000
+      auth.loggedIn = true
+      auth.graphConsentNeeded = true
+      auth.beginLogin()
+      compare(auth.graphRoundBusy, true)
+      auth.accessTokenExpiresAt = Date.now()
+      auth.withCredentials(function(token, error) {})
+      for (var i = 0; i < auth.children.length; i++) {
+        var child = auth.children[i]
+        if (child.command && child.command[0] === "secret-tool" && child.command[1] === "lookup"
+            && child.purpose === "session" && child.running) {
+          child.stdout.text = "refresh-mail\n"
+          child.running = false
+          child.exited(0)
+        }
+      }
+      compare(auth.refreshBusy, true, "a mail refresh is out under the code")
+      auth.logout()
+      compare(auth.graphRoundBusy, false)
+      compare(auth.refreshBusy, false, "signing out is everything's cancel")
+      compare(auth.loggedIn, false)
+      auth.sessionEnabled = true
+      auth.requests = []
+      auth.beginLogin()
+      compare(auth.devicePurpose, "mail")
+      compare(auth.requests.length, 1, "a sign-in can start again")
+    }
+
+    function test_a_second_code_issued_without_the_permission_keeps_its_refresh_token() {
+      var auth = fresh({ partialCodeGrant: "https://graph.microsoft.com/User.Read" })
+      signInForMail(auth)
+      compare(auth.devicePurpose, "graph")
+      auth.pollDeviceCode()
+      compare(auth.graphAccessToken, "")
+      compare(auth.refusals.length, 1)
+      var stored = []
+      if (auth.keyringJob) stored.push(auth.keyringJob.token)
+      for (var i = 0; i < auth.keyringJobs.length; i++) stored.push(auth.keyringJobs[i].token)
+      verify(stored.indexOf("refresh-graph") >= 0, "the code's refresh token is the live one: " + JSON.stringify(stored))
+      compare(auth.loggedIn, true)
     }
 
     function test_a_refusal_answered_after_a_grant_does_not_ask_again() {

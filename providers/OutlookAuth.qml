@@ -320,6 +320,9 @@ Item {
       return
     }
     if (Microsoft.missingGraphScope(result.scope)) {
+      // Issued to the right account without the permission: its refresh
+      // token is the live one all the same.
+      if (result.refreshToken) storeRefreshToken(result.refreshToken)
       failGraphRound(Microsoft.graphScopeMessage())
       return
     }
@@ -744,7 +747,11 @@ Item {
   }
 
   function cancelLogin() {
-    if (graphRoundBusy && !loginBusy) {
+    // Cancel on a settings-page Graph code, the mailbox staying signed in,
+    // is that code's alone. Signing out or changing identity is everything's:
+    // a mail refresh in flight would otherwise be left busy for good, its
+    // answer refused for the session being over.
+    if (graphRoundBusy && !loginBusy && sessionEnabled) {
       cancelGraphRound()
       return
     }
