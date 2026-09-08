@@ -1930,3 +1930,69 @@ function activityStatus(counts) {
   if (waiting > 0) parts.push(waiting + " waiting")
   return parts.join(" \u00b7 ")
 }
+
+// The header's scope and the mailbox switcher (Alt+M) stay on the fork:
+// upstream took both out in #148.
+function currentScope(mailboxKey, mailboxes, labels, rawQuery, rawLabelId, labelQueryOf) {
+  var query = String(rawQuery || "")
+  var labelId = String(rawLabelId || "")
+  var all = Array.isArray(labels) ? labels : []
+  if (query !== "") {
+    var i
+    for (i = 0; i < all.length; i++) {
+      if (!all[i] || all[i].system) continue
+      if (labelId !== "" && String(all[i].id || "") === labelId)
+        return { kind: "label", id: String(all[i].id || ""),
+          name: String(all[i].name || all[i].rawName || ""), icon: "label" }
+    }
+    for (i = 0; i < all.length; i++) {
+      if (!all[i] || all[i].system) continue
+      var name = String(all[i].rawName || all[i].name || "")
+      if (typeof labelQueryOf === "function" && labelQueryOf(name) === query)
+        return { kind: "label", id: String(all[i].id || ""),
+          name: String(all[i].name || name), icon: "label" }
+    }
+    return { kind: "label", id: labelId, name: query, icon: "label" }
+  }
+  var key = String(mailboxKey || "inbox")
+  var boxes = Array.isArray(mailboxes) ? mailboxes : []
+  for (var j = 0; j < boxes.length; j++) {
+    if (boxes[j] && String(boxes[j].key) === key)
+      return { kind: "mailbox", key: key, name: String(boxes[j].label || key),
+        icon: String(boxes[j].icon || "mail") }
+  }
+  return { kind: "mailbox", key: key,
+    name: key.charAt(0).toUpperCase() + key.slice(1), icon: "mail" }
+}
+
+function switcherRows(slots, labels, scope) {
+  var list = Array.isArray(slots) ? slots : []
+  var all = Array.isArray(labels) ? labels : []
+  var current = scope || {}
+  var out = []
+  for (var i = 0; i < list.length; i++) {
+    var slot = list[i]
+    if (!slot) continue
+    var row = { kind: slot.kind, name: String(slot.name || ""), number: i + 1,
+      count: 0, icon: "mail", selected: false }
+    if (slot.kind === "mailbox") {
+      row.key = String(slot.key || "")
+      row.icon = String(slot.icon || "mail")
+      row.selected = current.kind === "mailbox" && current.key === row.key
+    } else {
+      row.id = String(slot.id || "")
+      row.icon = "label"
+      row.selected = current.kind === "label" && current.id !== "" && current.id === row.id
+      for (var j = 0; j < all.length; j++) {
+        if (all[j] && String(all[j].id || "") === row.id) {
+          row.count = Math.max(0, Math.floor(Number(all[j].unread) || 0))
+          if (!row.selected && current.kind === "label" && current.id === "")
+            row.selected = String(all[j].rawName || all[j].name || "") === current.name
+          break
+        }
+      }
+    }
+    out.push(row)
+  }
+  return out
+}

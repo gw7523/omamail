@@ -120,6 +120,7 @@ used to exist, and they had.
 | `goMailbox` | `Ctrl+1`, `Ctrl+2`, `Ctrl+3`, `Ctrl+4`, `Ctrl+5`, `Ctrl+6`, `Ctrl+7`, `Ctrl+8`, `Ctrl+9`, `Ctrl+0` | mail | Go to that mailbox |
 | `goAccount` | `Alt+1`, `Alt+2`, `Alt+3`, `Alt+4`, `Alt+5`, `Alt+6`, `Alt+7`, `Alt+8`, `Alt+9`, `Alt+0` | mail+calendar | Go to that email account |
 | `switchAccount` | `Alt+A` | mail | Switch account |
+| `switchMailbox` | `Alt+M` | mail | Go to a mailbox |
 | `askAgent` | `Alt+G` | mail | Ask the agent about the message |
 | `calendar` | `Alt+C` | mail+calendar | Switch between mail and calendar |
 | `mailView` | `Ctrl+Shift+M` | mail+calendar+agent | Go to mail |
@@ -207,6 +208,9 @@ name, by the name they were given or their address; `Down` and `Up`, or `Ctrl`
 with `j`, `k`, `n` or `p`, walk what is left; `Enter` opens the row the cursor
 is on. A bare `j` or `k` is a letter there now, as it has to be for "jack" to
 find a mailbox.
+The mailbox switcher (`Alt+M`) is the same popup over the rail's rows, typed
+into the same way, and inside it a bare digit is the Ctrl digit: `4` opens the
+fourth row, `0` the tenth.
 `tests/qml/tst_popup_keys.qml` holds the Qt behaviour that makes it so, and
 `Model.wrappedIndex` holds the only decision in it — the cursor wraps, where the
 message list clamps.

@@ -50,6 +50,7 @@ QML_FILES := Service.qml BarWidget.qml App.qml \
 	components/SearchBar.qml \
 	components/AppMenu.qml \
 	components/AccountSwitcher.qml \
+	components/MailboxSwitcher.qml \
 	components/AgentPrompt.qml \
 	components/AgentView.qml \
 	components/LabelMenu.qml \

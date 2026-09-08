@@ -165,6 +165,10 @@ var BINDINGS = [
   // takes one.
   { id: "switchAccount", keys: ["Alt+A"], contexts: MAIL,
     group: "Going", label: "Switch account" },
+  // The rail as a list, for a window whose rail is collapsed or folded into
+  // tabs. Same rows, same digits: a bare digit inside it is the Ctrl digit.
+  { id: "switchMailbox", keys: ["Alt+M"], contexts: MAIL,
+    group: "Going", label: "Go to a mailbox" },
   // The message agent, on the cursor row. A popup, so the same shape as the
   // account switcher: opened through the table, then answering its own keys.
   { id: "askAgent", keys: ["Alt+G"], contexts: MAIL,

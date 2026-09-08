@@ -1169,6 +1169,15 @@ Item {
   readonly property var sidebarSlots: service
     ? Model.sidebarSlots(service.mailboxes, service.visibleLabels, 10) : []
 
+  // What the window is looking at, named from the same facts the rail draws;
+  // the mailbox switcher marks its row. Fork-only since upstream #148.
+  readonly property var scope: service
+    ? Model.currentScope(service.mailboxKey, service.mailboxes, service.labels,
+        service.rawQuery, service.rawLabelId,
+        function(name) { return Provider.labelQuery(service.providerId, name) })
+    : Model.currentScope("inbox", [], [], "", "", null)
+  readonly property var switcherRows: service ? Model.switcherRows(sidebarSlots, service.visibleLabels, scope) : []
+
   function goSlot(index) {
     if (!service || index < 0 || index >= sidebarSlots.length) return
     var slot = sidebarSlots[index]
@@ -1255,6 +1264,7 @@ Item {
       return
     }
     if (id === "switchAccount") return accountSwitcher.openCentered()
+    if (id === "switchMailbox") return mailboxSwitcher.openCentered()
     if (id === "calendar") {
       if (calendarVisible) backToList()
       else {
@@ -2829,6 +2839,19 @@ Item {
         onManageRequested: {
           root.openSettings()
         }
+      }
+
+      MailboxSwitcher {
+        id: mailboxSwitcher
+        objectName: "mailbox-switcher"
+        textColor: root.foreground
+        accentColor: root.accent
+        dimColor: root.dim
+        popupBackgroundColor: root.popupBackground
+        popupBorderColor: root.popupBorder
+        panelFontFamily: root.fontFamily
+        rows: root.switcherRows
+        onRowChosen: function(index) { root.goSlot(index) }
       }
 
       AgentPrompt {
