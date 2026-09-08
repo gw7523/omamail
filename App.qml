@@ -997,6 +997,8 @@ Item {
       return false
     }
     if (service.refuseUnavailableAction("label:destination", cursorId)) return false
+    // Suggestions are for one message; a ticked batch gets none.
+    labelPicker.suggestions = selectionActive && !labelPickerOnlyCursor ? [] : service.labelSuggestionsFor(cursorId)
     labelPicker.open()
     return true
   }
@@ -2922,8 +2924,11 @@ Item {
         panelFontFamily: root.fontFamily
         labels: root.service ? root.service.labels : []
         currentLabelId: root.service ? String(root.service.rawLabelId || "") : ""
-        onLabelChosen: function(labelId) {
-          root.actOnCursor("label:" + labelId, root.labelPickerOnlyCursor)
+        onLabelChosen: function(labelId, suggested) {
+          // Read before the move, learnt after it: a refused move teaches nothing.
+          var lesson = root.service.prepareLabelChoice(root.selectionActive && !root.labelPickerOnlyCursor
+            ? root.checkedIds : [root.cursorId], labelId, suggested)
+          if (root.actOnCursor("label:" + labelId, root.labelPickerOnlyCursor)) root.service.learnLabelChoice(lesson)
         }
       }
 

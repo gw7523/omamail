@@ -371,3 +371,38 @@ console.log("test_agent.js attention ok")
   assert.strictEqual(agent.lookCommand("", ""), "")
   assert.strictEqual(agent.commandProgram("  /opt/x/claude -p "), "claude")
 }
+
+// ------------------------------------------------------------ a label build
+//
+// The build of a label profile rides the runner as its own kind: owned by
+// the account, about no message, asking for no attention, and reported in
+// the pane's words when it finishes.
+{
+  const build = { id: "b1", kind: "labels", accountId: "imap:ada@example.com", account: "ada@example.com", state: "running", created: 5 }
+  const older = { id: "b0", kind: "labels", accountId: "imap:ada@example.com", account: "ada@example.com", state: "done", created: 2, summary: "Built 3 labels from 40 messages" }
+  const other = { id: "b2", kind: "labels", accountId: "imap:bob@example.com", account: "bob@example.com", state: "done", created: 9 }
+  const ask = { id: "m1", kind: "message", messageId: "41:INBOX", accountId: "imap:ada@example.com", state: "done" }
+  assert.strictEqual(agent.isLabelsJob(build), true)
+  assert.strictEqual(agent.isLabelsJob(ask), false)
+  assert.strictEqual(agent.labelsJobFor([older, ask, build, other], "imap:ada@example.com").id, "b1", "the newest of the account's builds")
+  assert.strictEqual(agent.labelsJobFor([older, ask, build, other], "imap:carol@example.com"), null)
+  assert.strictEqual(agent.labelsJobFor([older, ask, build, other], ""), null, "no owner, no build")
+  assert.strictEqual(agent.anyAttention([older], []), false, "a finished build pulses nothing")
+  assert.strictEqual(agent.anyAttention([ask], []), true)
+  assert.strictEqual(agent.finishedNote(older), "Label profile of ada@example.com built: Built 3 labels from 40 messages")
+  assert.strictEqual(agent.finishedNote({ kind: "labels", state: "failed", error: "himalaya has no account whose email is x" }),
+    "The label profile could not be built: himalaya has no account whose email is x")
+  assert.strictEqual(agent.finishedNote({ kind: "labels", state: "cancelled", account: "ada@example.com" }), "The label profile build of ada@example.com was cancelled")
+  assert.strictEqual(agent.finishedNote(build), "", "still running says nothing")
+
+  const line = agent.labelsPayload({ out: "/x/y.json", labels: [{ id: "A" }] }, "python3 '/p/label-brain.py' build", "imap:ada@example.com", "ada@example.com")
+  const payload = JSON.parse(line)
+  assert.strictEqual(payload.labels, true)
+  assert.strictEqual(payload.scope, "account:ada@example.com")
+  assert.strictEqual(payload.accountId, "imap:ada@example.com")
+  assert.strictEqual(payload.command, "python3 '/p/label-brain.py' build")
+  assert.deepEqual(JSON.parse(payload.message), { out: "/x/y.json", labels: [{ id: "A" }] }, "the spec rides in the message file")
+  assert.ok(payload.prompt.length > 0)
+  assert.strictEqual(agent.shellWord("/home/a b/plugins"), "'/home/a b/plugins'")
+  assert.strictEqual(agent.shellWord("it's"), "'it'\\''s'", "a quote inside is closed, escaped and reopened")
+}

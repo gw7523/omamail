@@ -29,16 +29,30 @@ Item {
 
   property string searchQuery: ""
 
+  // What the label brain suggests for the message, at most three, each
+  // with the tokens that told: [{ id, name, because }]. They lead the list
+  // under their own heading while the typed letters still name them.
+  property var suggestions: []
+
   readonly property bool opened: menu.opened
-  readonly property var matchingLabels: Model.movableLabels(
-    root.labels, root.searchQuery, root.currentLabelId)
+  // The list, for a test to read the rows drawn: a Popup's contents are
+  // not children of the item that owns it.
+  readonly property alias menuRows: labelList
+  readonly property var matchingLabels: Model.pickerRows(
+    root.suggestions, root.labels, root.searchQuery, root.currentLabelId)
 
   // Where the keyboard is standing. Reset to the top on every keystroke
   // because the list underneath it has changed: holding an index still would
   // leave the cursor on whatever row happened to inherit that position.
   property int cursorIndex: 0
+  // The list can shorten under the cursor for other reasons — the labels
+  // refreshed while the picker is up — and Return on a row that is gone
+  // must still take one.
+  onMatchingLabelsChanged: if (cursorIndex >= matchingLabels.length) cursorIndex = Math.max(0, matchingLabels.length - 1)
 
-  signal labelChosen(string labelId)
+  // Whether the row taken was one the brain suggested rides along: a
+  // choice it did not make is the one it learns most from.
+  signal labelChosen(string labelId, bool suggested)
 
   anchors.fill: parent
   z: 50
@@ -51,6 +65,8 @@ Item {
     place()
     searchField.forceActiveFocus()
   }
+
+  function close() { menu.close() }
 
   // A Popup does not build its contents until it is first opened, so on the
   // first open its height is still zero and centring it lands it high. Placing
@@ -74,7 +90,7 @@ Item {
     if (root.cursorIndex < 0 || root.cursorIndex >= matchCount) return
     var chosenLabel = root.matchingLabels[root.cursorIndex]
     menu.close()
-    root.labelChosen(String(chosenLabel.id || ""))
+    root.labelChosen(String(chosenLabel.id || ""), chosenLabel.suggested === true)
   }
 
   QQC.Popup {
@@ -175,9 +191,14 @@ Item {
           required property int index
 
           readonly property bool hasCursor: root.cursorIndex === labelRow.index
+          readonly property bool suggested: labelRow.modelData.suggested === true
+          // Why it was suggested, as the model wrote it; and the heading of
+          // the group this row is the first of, drawn above it.
+          readonly property string because: String(labelRow.modelData.reason || "")
+          readonly property string heading: String(labelRow.modelData.heading || "")
 
           width: labelList.width
-          implicitHeight: Style.space(34)
+          implicitHeight: Style.space(34) + (because !== "" ? Style.space(12) : 0) + (heading !== "" ? Style.space(18) : 0)
           radius: Style.cornerRadius
           color: labelRow.hasCursor || rowHover.hovered
             ? Style.hoverFillFor(root.textColor, root.accentColor) : "transparent"
@@ -185,19 +206,51 @@ Item {
           border.color: Style.hoverBorderFor(root.textColor, root.accentColor)
 
           // A child steps in under its parent, and is named by its own
-          // leaf; a match to typed letters shows its whole path, flat.
-          Text {
+          // leaf; a match to typed letters shows its whole path, flat. A
+          // suggestion is named in full, with why underneath, and the first
+          // row of a group carries the group's heading.
+          Column {
             anchors.left: parent.left
             anchors.leftMargin: Style.space(10) + Math.min(8, Number(labelRow.modelData.depth) || 0) * Style.space(12)
             anchors.right: parent.right
             anchors.rightMargin: Style.space(10)
             anchors.verticalCenter: parent.verticalCenter
-            textFormat: Text.PlainText
-            text: String(labelRow.modelData.leaf || labelRow.modelData.name || "")
-            color: root.textColor
-            font.family: root.panelFontFamily
-            font.pixelSize: Style.font.bodySmall
-            elide: Text.ElideRight
+            spacing: Style.space(1)
+
+            Text {
+              objectName: "picker-heading"
+              width: parent.width
+              visible: labelRow.heading !== ""
+              bottomPadding: Style.space(3)
+              textFormat: Text.PlainText
+              text: labelRow.heading
+              color: root.dimColor
+              font.family: root.panelFontFamily
+              font.pixelSize: Style.font.caption
+              font.letterSpacing: 1
+            }
+
+            Text {
+              width: parent.width
+              textFormat: Text.PlainText
+              text: String(labelRow.modelData.leaf || labelRow.modelData.name || "")
+              color: root.textColor
+              font.family: root.panelFontFamily
+              font.pixelSize: Style.font.bodySmall
+              elide: Text.ElideRight
+            }
+
+            Text {
+              objectName: "picker-reason"
+              width: parent.width
+              visible: labelRow.because !== ""
+              textFormat: Text.PlainText
+              text: labelRow.because
+              color: root.dimColor
+              font.family: root.panelFontFamily
+              font.pixelSize: Style.font.caption
+              elide: Text.ElideRight
+            }
           }
 
           HoverHandler { id: rowHover }

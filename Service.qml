@@ -6,6 +6,7 @@ import "account"
 import "calendar"
 import "agent"
 import "agent/Agent.js" as Agent
+import "account/LabelBrain.js" as Brain
 
 import "account/Accounts.js" as Accounts
 import "account/Model.js" as Model
@@ -67,6 +68,7 @@ Item {
     defaultQuery: "in:inbox",
     agentCommand: "",
     suggestEvents: false,
+    suggestLabels: false,
     lookCommand: "",
     notifyNewMail: "On",
     oauthPort: 9481,
@@ -91,6 +93,121 @@ Item {
   // for calendar events in. Off until the owner turns it on: the message
   // text leaves the window for the agent command.
   readonly property bool suggestEvents: !!settings && settings.suggestEvents === true
+  // Whether the move-to picker leads with the labels a message looks like,
+  // read from the counts `scripts/label-brain.py` builds from the archive
+  // and each choice in the picker adds to. Off until turned on: on, every
+  // move is written to a file in the owner's data directory.
+  readonly property bool suggestLabels: !!settings && settings.suggestLabels === true
+  function setSuggestLabels(value) { persistSetting("suggestLabels", value === true) }
+  // Where the profiles are kept; a test points it away from the home.
+  property string labelDataHome: ""
+  // The mailbox the settings page is looking at; the open one until it
+  // picks another.
+  property string labelSettingsAccountId: ""
+  // Read from the open account's own brain when the page is looking at
+  // the open account, since that is the one the choices are added to.
+  readonly property bool labelBrainViewIsActive: labelBrainView.accountId === labelBrain.accountId
+  readonly property var labelBrainStatus: labelBrainViewIsActive ? labelBrain.status : labelBrainView.status
+  readonly property bool labelBrainLoaded: labelBrainViewIsActive ? labelBrain.loaded : labelBrainView.loaded
+  readonly property string labelBrainAccountId: labelBrainView.accountId
+  readonly property var labelBrainJob: Agent.labelsJobFor(agentRunner.jobs, labelBrainView.accountId)
+  // Building from the moment the build is asked for, before the runner's
+  // listing shows it: a choice in that gap would be written to a journal
+  // the build is about to fold in and remove.
+  property string labelBuildStarting: ""
+  function labelBuildActive(accountId) {
+    var id = String(accountId || "")
+    return id !== "" && (labelBuildStarting === id || Agent.isActive(Agent.labelsJobFor(agentRunner.jobs, id)))
+  }
+  readonly property bool labelBrainBuilding: labelBuildActive(labelBrainView.accountId)
+
+  // The labels the message looks like, for the picker: nothing with the
+  // setting off, in a merged list, or for a message this account does not
+  // hold. The reader's text joins in when the message is the one open.
+  function labelSuggestionsFor(messageId) {
+    if (!suggestLabels || unified || !current) return []
+    var id = String(messageId || "")
+    var row = messages[Model.indexById(messages, id)]
+    if (!row) return []
+    return labelBrain.suggest(labels, rawLabelId, row, bodyTextIfOpen(id))
+  }
+  function bodyTextIfOpen(id) {
+    var open = current ? current.selectedMessage : null
+    if (!open || String(open.id || "") !== String(id)) return ""
+    return current.selectedBody ? String(current.selectedBody.text || "") : ""
+  }
+  // A choice made in the picker for one message, in two steps: what there
+  // is to learn is read before the move, while the row is still listed —
+  // its tokens, not the row, which the list may change — and learnt after
+  // it, once the move has been sent: a move the provider refused teaches
+  // nothing. A ticked batch is not learnt at all: it was offered no
+  // suggestions, and one label for many messages is a filing, not a lesson.
+  function prepareLabelChoice(ids, labelId, suggested) {
+    if (!suggestLabels || unified || !current) return null
+    var list = Array.isArray(ids) ? ids : []
+    if (list.length !== 1) return null
+    // A build in flight reads the archive and then removes the journal a
+    // choice would be appended to. It is not learnt.
+    if (labelBuildActive(current.accountId)) return null
+    var id = String(list[0] || "")
+    var row = messages[Model.indexById(messages, id)]
+    if (!row) return null
+    var label = labelById(labelId)
+    var name = label ? String(label.name || label.rawName || labelId) : String(labelId || "")
+    return { accountId: current.accountId, labelId: String(labelId || ""), name: name,
+      suggested: suggested === true, features: Brain.features(row, bodyTextIfOpen(id)) }
+  }
+  function learnLabelChoice(lesson) {
+    if (!lesson || !suggestLabels || labelBrain.accountId !== String(lesson.accountId || "")) return
+    if (labelBuildActive(lesson.accountId)) return
+    labelBrain.learnFeatures(lesson.labelId, lesson.name, lesson.features, lesson.suggested)
+  }
+  function noteLabelChoice(ids, labelId, suggested) { learnLabelChoice(prepareLabelChoice(ids, labelId, suggested)) }
+  // Messages leaving the label on screen — moved elsewhere, thrown away,
+  // or on a provider that files by folder, archived or marked as spam —
+  // are counted, and past a point the settings say a rebuild is due.
+  function noteLabelDeparture(action, count) {
+    if (!suggestLabels || unified || !current) return
+    // A build in flight starts the departures again from nothing, and
+    // removes the journal one counted now would go to.
+    if (labelBuildActive(current.accountId)) return
+    var here = String(rawLabelId || "")
+    if (here === "" || Model.isSystemLabelId(here)) return
+    var target = Model.labelTarget(action)
+    var verb = String(action || "")
+    var leaves = (target !== "" && target !== here) || verb === "trash" || verb === "delete"
+      || (!hasLabels && (verb === "archive" || verb === "spam"))
+    if (!leaves) return
+    var n = Math.max(1, Math.floor(Number(count)) || 1)
+    for (var i = 0; i < n; i++) labelBrain.noteDeparture()
+  }
+  // The build, as a job of the runner's: cancellable, listed, watched here.
+  function buildLabelBrain(accountId) {
+    var owner = labelOwner(accountId, true)
+    if (!owner) return false
+    if (labelBuildActive(owner.accountId)) {
+      owner.fail("That mailbox's label profile is already being built")
+      return false
+    }
+    if (pluginDir === "") return false
+    var spec = Brain.buildSpec(owner.accountId, owner.accountEmail, labelBrain.pathFor(owner.accountId), owner.labels, null)
+    spec.provider = String(owner.providerId || "")
+    var command = "python3 " + Agent.shellWord(pluginDir + "/scripts/label-brain.py") + " build"
+    if (!agentRunner.start(Agent.labelsPayload(spec, command, owner.accountId, owner.accountEmail))) return false
+    labelBuildStarting = owner.accountId
+    labelBuildStartedAt = Date.now()
+    labelBuildStartGrace.restart()
+    return true
+  }
+  function cancelLabelBrain(accountId) {
+    var job = Agent.labelsJobFor(agentRunner.jobs, accountId)
+    if (job && Agent.isActive(job)) agentRunner.cancelById(String(job.id))
+  }
+  function forgetLabelBrain(accountId) {
+    var id = String(accountId || "")
+    if (labelBrain.accountId === id) labelBrain.forget()
+    if (labelBrainView.accountId === id) labelBrainView.forget()
+  }
   function setSuggestEvents(value) { persistSetting("suggestEvents", value === true) }
   // What a look runs: the owner's own line for looks, or the default
   // agent's preset at its cheapest model, or the default agent as it is.
@@ -114,6 +231,42 @@ Item {
   // The open account's jobs by message id — another account's job about
   // the same id is not this row's, however the id reads.
   readonly property var agentJobs: agentRunner.byMessage
+  // The flag stands while the start is under way and until the runner
+  // lists what came of it: the build running, or the build already over
+  // — an older build still listed is not it — or nothing, when the start
+  // went nowhere. A wall clock is the last resort only, and never while
+  // the starter is still running.
+  property double labelBuildStartedAt: 0
+  function settleLabelBuildStart() {
+    if (labelBuildStarting === "" || agentRunner.starting) return
+    var job = Agent.labelsJobFor(agentRunner.jobs, labelBuildStarting)
+    var newer = !!job && Number(job.created || 0) * 1000 >= labelBuildStartedAt - 1000
+    if (!job || !newer) {
+      // Not listed at all once the starter is done: nothing came of it.
+      if (!agentRunner.starting) labelBuildStarting = ""
+      return
+    }
+    labelBuildStarting = ""
+    if (!Agent.isActive(job) && String(job.state || "") === "done") reloadLabelBrains(String(job.accountId || ""))
+  }
+  function reloadLabelBrains(accountId) {
+    if (labelBrain.accountId === accountId) labelBrain.reload()
+    if (labelBrainView.accountId === accountId) labelBrainView.reload()
+  }
+  Connections {
+    target: agentRunner
+    function onJobsChanged() { root.settleLabelBuildStart() }
+    function onStartingChanged() { if (!agentRunner.starting) Qt.callLater(root.settleLabelBuildStart) }
+  }
+  Timer {
+    id: labelBuildStartGrace
+    interval: 15000
+    onTriggered: {
+      if (agentRunner.starting) { restart(); return }
+      root.settleLabelBuildStart()
+      root.labelBuildStarting = ""
+    }
+  }
   // Whether any job wants the owner, and which messages' jobs do: what the
   // agent buttons pulse for. Opening a job's popup or card is what stops it.
   readonly property bool agentAttention: agentRunner.attention
@@ -1679,7 +1832,9 @@ Item {
   }
   function act(id, action, quiet, memberOnly) {
     var host = hostForId(id)
-    return host ? host.act(sourceIdFor(id), action, quiet, memberOnly) : false
+    if (!host || !host.act(sourceIdFor(id), action, quiet, memberOnly)) return false
+    noteLabelDeparture(action)
+    return true
   }
   function toggleStar(id) {
     var host = hostForId(id)
@@ -1700,7 +1855,14 @@ Item {
       fail("Acting on several messages needs one mailbox on screen")
       return false
     }
-    return current ? current.actMany(ids, action) : false
+    // Counted before the act, and only the rows still listed: a tick on a
+    // row that has already gone is not a message leaving.
+    var listed = 0
+    var list = Array.isArray(ids) ? ids : []
+    for (var i = 0; i < list.length; i++) if (Model.indexById(messages, String(list[i] || "")) >= 0) listed++
+    if (!current || !current.actMany(ids, action)) return false
+    if (listed > 0) noteLabelDeparture(action, listed)
+    return true
   }
   // The mailbox the From address belongs to, which compose already names:
   // `sendIdentities` spans every account and carries the id, so a unified
@@ -2150,6 +2312,19 @@ Item {
     service: root
   }
 
+  // The open account's label profile, for the picker; and the one the
+  // settings page is looking at, which is usually the same file read twice.
+  LabelBrain {
+    id: labelBrain
+    accountId: root.activeAccountId
+    dataHomeOverride: root.labelDataHome
+  }
+  LabelBrain {
+    id: labelBrainView
+    accountId: root.labelSettingsAccountId !== "" ? root.labelSettingsAccountId : root.activeAccountId
+    dataHomeOverride: root.labelDataHome
+  }
+
   AgentRunner {
     id: agentRunner
     pluginDir: root.pluginDir
@@ -2157,6 +2332,10 @@ Item {
     // only unique inside one account, and two accounts can share an address.
     accountId: root.current ? root.current.accountId : ""
     onJobFinished: function(job) {
+      // A build that finished wrote the file the brains read; one that
+      // failed or was cancelled wrote nothing, and what is in memory stands.
+      if (Agent.isLabelsJob(job) && labelBuildStarting === String(job.accountId || "")) labelBuildStarting = ""
+      if (Agent.isLabelsJob(job) && String(job.state || "") === "done") reloadLabelBrains(String(job.accountId || ""))
       var text = Agent.finishedNote(job)
       // On the account the job was about; the open one only for a job that
       // named none.

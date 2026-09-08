@@ -151,6 +151,14 @@ function finishedNote(job) {
     var found = glyph === "done" && Array.isArray(job.events) ? job.events.length : 0
     return found > 0 ? "The agent found " + (found === 1 ? "an event" : found + " events") + " in " + about : ""
   }
+  if (isLabelsJob(job)) {
+    var mailbox = String(job.account || "").trim()
+    var whose = mailbox === "" ? "" : " of " + mailbox
+    if (glyph === "done") return "Label profile" + whose + " built: " + String(job.summary || "").trim()
+    if (glyph === "failed") return "The label profile" + whose + " could not be built" + (String(job.error || "") !== "" ? ": " + String(job.error) : "")
+    if (glyph === "cancelled") return "The label profile build" + whose + " was cancelled"
+    return ""
+  }
   if (glyph === "question") return "The agent has a question about " + about
   if (glyph === "done") return "The agent finished with " + about
   if (glyph === "failed") return "The agent failed on " + about
@@ -472,7 +480,7 @@ function wantsAttention(job, seen) {
 
 function anyAttention(jobs, seen) {
   var list = Array.isArray(jobs) ? jobs : []
-  for (var i = 0; i < list.length; i++) if (!isEventsJob(list[i]) && wantsAttention(list[i], seen)) return true
+  for (var i = 0; i < list.length; i++) if (!isEventsJob(list[i]) && !isLabelsJob(list[i]) && wantsAttention(list[i], seen)) return true
   return false
 }
 
@@ -563,6 +571,42 @@ function draftAnswer(job, output) {
 // no row; its findings are the card the reader shows.
 function isEventsJob(job) {
   return !!job && String(job.kind || "") === "events"
+}
+
+// A build of an account's label profile: the same runner, no agent. It is
+// a row in the pane while it runs and answers to no message; the settings
+// page is where it is watched.
+function isLabelsJob(job) {
+  return !!job && String(job.kind || "") === "labels"
+}
+
+// The newest build for an account, whatever state it is in — running to
+// show progress, finished to say how it went — or null.
+function labelsJobFor(jobs, accountId) {
+  var list = Array.isArray(jobs) ? jobs : []
+  var newest = null
+  for (var i = 0; i < list.length; i++) {
+    if (!isLabelsJob(list[i]) || !ownedBy(list[i], accountId)) continue
+    if (!newest || Number(list[i].created || 0) > Number(newest.created || 0)) newest = list[i]
+  }
+  return newest
+}
+
+function labelsPayload(spec, command, accountId, account) {
+  return JSON.stringify({
+    labels: true,
+    accountId: String(accountId || ""),
+    account: String(account || ""),
+    scope: "account:" + String(account || ""),
+    command: String(command || ""),
+    prompt: "Build the label profile from the archive.",
+    message: JSON.stringify(spec || {})
+  })
+}
+
+// A path as one word for /bin/sh, whatever it holds.
+function shellWord(text) {
+  return "'" + String(text || "").replace(/'/g, "'\\''") + "'"
 }
 
 // Whether the text mentions a date or a time at all: a month or weekday by

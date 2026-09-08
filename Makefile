@@ -48,6 +48,7 @@ QML_FILES := Service.qml BarWidget.qml App.qml \
 	components/SearchBar.qml \
 	components/AppMenu.qml \
 	components/AccountSwitcher.qml \
+	account/LabelBrain.qml \
 	components/AgentPrompt.qml \
 	components/AgentView.qml \
 	components/LabelMenu.qml \
@@ -83,6 +84,7 @@ test: test-js test-shell test-qml
 test-js:
 	node tests/test_compose_recovery.js
 	node tests/test_agent.js
+	node tests/test_label_brain.js
 	node tests/test_signature.js
 	node tests/test_outbox.js
 	node tests/test_recipients.js
@@ -136,6 +138,7 @@ test-shell-portable:
 	bash tests/test_service_source.sh
 	bash tests/test_config_store.sh
 	bash tests/test_agent_job.sh
+	bash tests/test_label_brain.sh
 	bash tests/test_link_plugin.sh
 	bash tests/test_mailto.sh
 	bash tests/test_transport.sh
