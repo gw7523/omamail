@@ -508,5 +508,49 @@ Item {
       auth.logout()
       compare(auth.graphConsentNeeded, false)
     }
+
+    // Work parked on a Graph token belongs to the mailbox that parked it. When
+    // the window is pointed at another account the waiter is answered there
+    // and then, and the exchange still in flight — now the other account's —
+    // never reaches it.
+    function test_a_graph_waiter_queued_before_an_account_switch_gets_no_token() {
+      var auth = fresh({ graphConsented: true, deferGraphExchange: true })
+      var answers = []
+      auth.graphWaiters = [function(token, error) { answers.push({ token: token, error: error }) }]
+      auth.handleGraphLookup("refresh-alice", auth.sessionContext())
+      compare(answers.length, 0, "the exchange is still out")
+      verify(auth.deferred !== null, "and its answer is held by the fixture")
+
+      auth.accountId = "outlook:bob@example.test"
+      compare(answers.length, 1, "the switch answers what was waiting")
+      compare(answers[0].token, "", "and never hands it a token")
+      verify(answers[0].error !== "")
+
+      var release = auth.deferred
+      auth.deferred = null
+      release(200, JSON.stringify({ access_token: "bob-graph-token", refresh_token: "refresh-bob",
+        expires_in: 3600, scope: "https://graph.microsoft.com/Mail.Send" }))
+      compare(answers.length, 1, "the exchange that landed after the switch says nothing to it")
+      compare(auth.graphAccessToken, "", "and is not filed under the mailbox that replaced it")
+    }
+
+    // The same, for a sign-out rather than a switch: the waiter is answered
+    // once, by the sign-out, and the late exchange adds nothing.
+    function test_a_graph_waiter_is_answered_once_by_a_sign_out() {
+      var auth = fresh({ graphConsented: true, deferGraphExchange: true })
+      var answers = []
+      auth.graphWaiters = [function(token, error) { answers.push({ token: token, error: error }) }]
+      auth.handleGraphLookup("refresh-alice", auth.sessionContext())
+      auth.logout()
+      compare(answers.length, 1)
+      compare(answers[0].token, "")
+
+      var release = auth.deferred
+      auth.deferred = null
+      release(200, JSON.stringify({ access_token: "graph-token", refresh_token: "refresh-rotated",
+        expires_in: 3600, scope: "https://graph.microsoft.com/Mail.Send" }))
+      compare(answers.length, 1)
+      compare(auth.graphAccessToken, "")
+    }
   }
 }

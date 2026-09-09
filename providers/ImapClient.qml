@@ -1054,6 +1054,11 @@ Item {
       if (typeof callback === "function") callback(null, "This mailbox cannot send through Microsoft Graph")
       return handle
     }
+    // The message is bound to the session that queued it. A token arriving
+    // for a mailbox that is no longer this one belongs to that mailbox, not
+    // to this MIME: the send is refused rather than carried to whoever is
+    // signed in now.
+    var session = typeof auth.sessionContext === "function" ? auth.sessionContext() : null
     root.inFlight++
     auth.withGraphToken(function(token, tokenError) {
       if (!root) return
@@ -1061,9 +1066,13 @@ Item {
         root.inFlight = Math.max(0, root.inFlight - 1)
         return
       }
-      if (!token) {
+      var mine = !session || typeof auth.isCurrent !== "function" || auth.isCurrent(session)
+      if (!token || !mine) {
         root.inFlight = Math.max(0, root.inFlight - 1)
-        if (typeof callback === "function") callback(null, tokenError || "Not signed in to Microsoft Graph")
+        if (typeof callback === "function") {
+          callback(null, !mine ? "This mailbox is no longer signed in"
+            : (tokenError || "Not signed in to Microsoft Graph"))
+        }
         return
       }
       var message = Mail.decodeBase64Url(raw)
