@@ -85,3 +85,10 @@ assert.deepEqual(copy(a.historyFor(drafts,A,[],'draft1')).map(j=>j.id),['d1'])
 
 assert.equal(a.workingText({state:'running',created:100},2580000,0),'• Working (41m 20s • Esc to interrupt • / show commands)')
 assert.equal(a.workingText(null,3500,1000),'• Preparing (0m 2s • / show commands)')
+
+assert.equal(a.pendingJob(history,null,false,'a1','a1').id,'a2')
+assert.equal(a.pendingJob(history,history[0],false,'',''),null)
+assert.equal(a.pendingJob(history,history[0],true,'','a1'),null)
+assert.equal(a.pendingLimit(Array(20).fill('next'),'next').length > 0,true)
+assert.equal(a.pendingLimit([], 'x'.repeat(65537)).length > 0,true)
+assert.equal(a.pendingLimit(['one'], 'two'),'')

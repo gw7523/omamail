@@ -46,7 +46,7 @@ QML_FILES := Service.qml BarWidget.qml App.qml \
 	components/SearchBar.qml \
 	components/AppMenu.qml \
 	components/AccountSwitcher.qml \
-	components/AgentPrompt.qml \
+	components/AgentPrompt.qml agent/PendingMessages.qml \
 	components/LabelMenu.qml \
 	components/LabelMovePicker.qml \
 	components/NamePrompt.qml \

@@ -196,6 +196,8 @@ Item {
       app.loadComposeRecovery("")
       app.clearComposeRecovery()
       mailService.sendPending = false
+      var aiDock = named(app,"compose-agent")
+      if (aiDock) { aiDock.submittedPrompt=""; findChild(aiDock,"agent-pending-queue").messages=[] }
       app.preferredAssistantWidth = 0
       mailService.draftAgentJobs = []; mailService.cancelledAgentId = ""
       mailService.agentRequests = 0
@@ -294,6 +296,24 @@ Item {
       compare(mailService.cancelledAgentId,"running")
       compare(dock.opened,true)
     }
+    function test_enter_queues_multiple_messages_while_ai_is_running() {
+      app.open("{}")
+      app.startCompose("new")
+      app.runShortcut("askAgent", "Alt+G")
+      var dock=named(app,"compose-agent")
+      mailService.draftAgentJobs=[{id:"active",state:"running",created:1}]
+      var field=named(dock,"agent-prompt-field")
+      tryCompare(field,"activeFocus",true)
+      field.text="Second question"
+      keyClick(Qt.Key_Return)
+      field.text="Third question"
+      keyClick(Qt.Key_Return)
+      compare(field.text,"")
+      compare(mailService.agentRequests,0)
+      var queue=findChild(dock,"agent-pending-queue")
+      compare(queue.messages.length,2)
+      queue.messages=[]
+    }
     function test_header_ai_toggle_and_multiline_send() {
       app.open("{}")
       app.startCompose("new")
@@ -315,10 +335,18 @@ Item {
       keyClick(Qt.Key_Return)
       compare(mailService.agentRequests, 1)
       compare(mailService.lastAgentPrompt, "First line\nx")
+      compare(field.text, "")
       keyClick(Qt.Key_Enter)
-      compare(mailService.agentRequests, 2)
+      compare(mailService.agentRequests, 1)
+      field.text = "Next question"
+      keyClick(Qt.Key_Enter)
+      compare(mailService.agentRequests, 1)
+      field.text = "Another question"
       keyClick(Qt.Key_Enter, Qt.ControlModifier)
-      compare(mailService.agentRequests, 3)
+      compare(mailService.agentRequests, 1)
+      compare(findChild(dock,"agent-pending-queue").messages.length, 2)
+      findChild(dock,"agent-pending-queue").messages=[]
+      dock.submittedPrompt=""
       compare(app.composing, true)
       mouseClick(toggle, toggle.width / 2, toggle.height / 2)
       tryCompare(dock, "opened", false)

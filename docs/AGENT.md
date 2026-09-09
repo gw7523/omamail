@@ -21,6 +21,15 @@ for the current mail or draft. The header AI button closes the dock without stop
 While running, a timed Working line stays above the input and Escape interrupts
 the request; when idle, Escape closes the dock.
 
+While AI is working, Enter adds another message to a Pending queue and clears
+the input immediately. Messages run in order in the same conversation after
+each successful reply. Click a pending message to bring it back into an empty
+input for editing, or remove it with ×. A failed start retains the message;
+interrupting or a failed reply pauses the queue. Pending messages are held only
+for this application session, with up to 20 messages and bounded text size.
+They never switch to another mail or conversation. The queue for a request still
+preparing its first turn waits until that conversation can be identified.
+
 The worker runs silently in the background. Text appears progressively, along
 with public status events such as reading a file or finishing a tool. Raw tool
 arguments/results, diagnostics, and internal reasoning are not displayed.

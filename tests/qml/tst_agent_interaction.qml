@@ -19,6 +19,7 @@ Item {
     property string cancelledId: ""
     function cancelAgentJob(id) { cancelledId=id; return true }
     property var jobs: []
+    readonly property var agentAllJobs: jobs
     property bool accept: true
     property int calls: 0
     property string requestedId: ""
@@ -29,7 +30,7 @@ Item {
     function showAgentJob(id) { agentShownId=id }
     function acknowledgeAgentJob(id) {}
     function askAgent(id, prompt, account) { requestedId=id; calls++; if (accept) agentStarting=true; return accept }
-    function answerAgent(id, prompt) { parentId=id; calls++;agentStarting=true;return true }
+    function answerAgent(id, prompt) { parentId=id; calls++; if (!accept) return false; agentStarting=true;return true }
     function askAgentMany(ids, prompt, account) { return askAgent(ids[0],prompt,account) }
     function askAgentDraft(fields, prompt) { return askAgent("",prompt,fields.accountId) }
   }
@@ -53,6 +54,7 @@ Item {
     name: "AgentInteraction"
     when: windowShown
     function init() {
+      findChild(popup,"agent-pending-queue").messages=[]
       popup.close(); popup.composer=null
       service.jobs=[];service.agentStarting=false;service.agentError="";service.calls=0;service.accept=true
       service.agentShownOutput="";service.agentShownTranscript=[];service.parentId="";service.agentShownId="";draft.applied=""
@@ -152,6 +154,79 @@ Item {
       compare(field.text,"**Bold** and <b>literal</b>")
       tryCompare(copy,"copied",false,2500)
       compare(copy.contentItem.name,"copy")
+    }
+    function test_pending_messages_continue_in_order_and_wait_for_ack() {
+      service.jobs=[{id:"first",conversationId:"chat",messageId:"m1",accountId:service.activeAccountId,state:"running",created:1}]
+      popup.openCenteredFor("m1","Mail")
+      verify(popup.submit("Second question"))
+      verify(popup.submit("Third question"))
+      var queue=findChild(popup,"agent-pending-queue")
+      compare(queue.messages.length,2)
+      compare(findChild(popup,"agent-prompt-field").text,"")
+      queue.advance()
+      compare(service.calls,0)
+      service.jobs=[{id:"first",conversationId:"chat",messageId:"m1",accountId:service.activeAccountId,state:"done",canContinue:true,created:1}]
+      queue.advance()
+      compare(service.calls,1)
+      compare(service.parentId,"first")
+      compare(queue.messages.length,2)
+      queue.advance()
+      compare(service.calls,1)
+      service.jobs=[{id:"second",conversationId:"chat",messageId:"m1",accountId:service.activeAccountId,state:"running",created:2}]
+      service.agentStarting=false
+      queue.advance()
+      compare(queue.messages.length,1)
+      compare(queue.messages[0],"Third question")
+      service.jobs=[{id:"second",conversationId:"chat",messageId:"m1",accountId:service.activeAccountId,state:"done",canContinue:true,created:2}]
+      queue.advance()
+      compare(service.parentId,"second")
+      compare(service.calls,2)
+    }
+    function test_pending_during_startup_waits_for_the_new_turn() {
+      popup.openCenteredFor("m1","Mail")
+      verify(popup.submit("Initial question"))
+      verify(popup.submit("Follow up"))
+      var queue=findChild(popup,"agent-pending-queue")
+      queue.advance()
+      compare(service.calls,1)
+      service.agentStarting=false
+      queue.advance()
+      compare(service.calls,1)
+      service.jobs=[{id:"initial",conversationId:"initial",messageId:"m1",accountId:service.activeAccountId,state:"done",canContinue:true,created:1}]
+      queue.advance()
+      compare(service.calls,2)
+      compare(service.parentId,"initial")
+    }
+    function test_pending_pauses_after_cancel_and_does_not_cross_context() {
+      service.jobs=[{id:"first",conversationId:"chat",messageId:"m1",accountId:service.activeAccountId,state:"running",created:1}]
+      popup.openCenteredFor("m1","Mail")
+      verify(popup.submit("Keep this pending"))
+      var queue=findChild(popup,"agent-pending-queue")
+      verify(popup.interrupt())
+      service.jobs=[{id:"first",conversationId:"chat",messageId:"m1",accountId:service.activeAccountId,state:"done",canContinue:true,created:1}]
+      queue.advance()
+      compare(service.calls,0)
+      popup.openCenteredFor("m2","Other mail")
+      service.jobs=[{id:"other",conversationId:"other",messageId:"m2",accountId:service.activeAccountId,state:"done",canContinue:true,created:2}]
+      queue.advance()
+      compare(service.calls,0)
+      compare(queue.messages[0],"Keep this pending")
+      compare(popup.submit("Different conversation"),false)
+      compare(queue.remove(0),"Keep this pending")
+      compare(queue.busy,false)
+    }
+    function test_failed_pending_start_keeps_message_for_editing() {
+      service.jobs=[{id:"first",messageId:"m1",accountId:service.activeAccountId,state:"running",created:1}]
+      popup.openCenteredFor("m1","Mail")
+      verify(popup.submit("Keep me"))
+      var queue=findChild(popup,"agent-pending-queue")
+      service.jobs=[{id:"first",messageId:"m1",accountId:service.activeAccountId,state:"done",canContinue:true,created:1}]
+      service.accept=false
+      queue.advance()
+      compare(queue.paused,true)
+      compare(queue.messages[0],"Keep me")
+      queue.advance()
+      compare(service.calls,1)
     }
     function test_copy_appears_only_after_response_finishes() {
       service.jobs=[{id:"reply",messageId:"m1",accountId:service.activeAccountId,state:"running"}]
@@ -254,7 +329,8 @@ Item {
       field.forceActiveFocus()
       keyClick(Qt.Key_Return)
       compare(service.calls,1)
-      compare(popup.submit("Second"),false)
+      verify(popup.submit("Second"))
+      compare(findChild(popup,"agent-pending-queue").messages.length,1)
     }
     function test_rejected_request_stays_open_with_prompt() {
       service.accept=false

@@ -485,3 +485,25 @@ function historyFor(jobs, accountId, ids, draftKey) {
 function historyLabel(job) {
   return new Date(Number(job.created || 0) * 1000).toLocaleString() + " · " + String(job.requestPreview || job.subject || "Conversation")
 }
+
+// Queue policy is independent of views and never matches a different conversation.
+function pendingJob(jobs, currentJob, scopeMatches, conversationId, previousId) {
+  var rows = Array.isArray(jobs) ? jobs : []
+  if (!rows.length && scopeMatches && currentJob) rows = [currentJob]
+  var result = null
+  for (var i = 0; i < rows.length; i++) {
+    var job = rows[i]
+    if (conversationId === "") {
+      if (!scopeMatches || !currentJob || job.id !== currentJob.id || String(job.id) === previousId) continue
+    } else if (String(job.conversationId || job.id) !== conversationId) continue
+    if (!result || createdOrder(job) > createdOrder(result)) result = job
+  }
+  return result
+}
+function pendingLimit(messages, text) {
+  if (messages.length >= 20) return "The queue is full. Wait for a reply or remove a pending message."
+  var size = text.length
+  for (var i = 0; i < messages.length; i++) size += messages[i].length
+  if (text.length > 65536 || size > 262144) return "This pending message is too long. Shorten it before sending."
+  return ""
+}

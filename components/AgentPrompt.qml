@@ -3,6 +3,7 @@ import QtQuick.Controls as QQC
 import qs.Commons
 import qs.Ui
 import "../agent/Agent.js" as Agent
+import "../agent" as AI
 import "../agent/ChatText.js" as ChatText
 import "Menu.js" as Menu
 
@@ -27,6 +28,17 @@ FocusScope {
   property string localError: ""
   property string submittedPrompt: ""
   property string submittedJobId: ""
+  property string submittedScope: ""
+  readonly property string queueScope: JSON.stringify(composer
+    ? ["draft", fields.accountId || accountId, fields.draftKey]
+    : ["mail", accountId, (overSelection ? messageIds.slice() : [messageId]).sort()])
+  AI.PendingMessages {
+    id: pending
+    objectName: "agent-pending-queue"
+    service: root.service
+    currentScope: root.queueScope
+    currentJob: root.job
+  }
   readonly property var fields: composer ? composer.currentFields() : ({})
   readonly property bool overSelection: messageIds.length > 1
   property bool opened: false
@@ -72,6 +84,8 @@ FocusScope {
     return rows.length ? rows : (output ? [{role: "assistant", text: output}] : [])
   }
   readonly property bool working: Agent.isActive(job) || (!!service && !!service.agentStarting)
+    || (submittedScope === queueScope && submittedPrompt !== "" && errorText === "")
+    || (pending.visibleHere && pending.dispatching)
   property double statusNow: Date.now()
   property double preparationStarted: Date.now()
   onWorkingChanged: { statusNow = Date.now(); if (working) preparationStarted = statusNow }
@@ -83,6 +97,7 @@ FocusScope {
   }
   function interrupt() {
     if (!service || !Agent.isActive(job)) return false
+    pending.pause()
     service.cancelAgentJob(String(job.id))
     return true
   }
@@ -92,6 +107,12 @@ FocusScope {
   readonly property bool draftChanged: !!composer && !!job && !!job.draftFingerprint
     && job.draftFingerprint !== Agent.draftFingerprint(fields)
   readonly property string errorText: localError || (service ? service.agentError || "" : "")
+  onErrorTextChanged: {
+    if (errorText !== "" && submittedPrompt !== "" && submittedScope === queueScope && !Agent.isActive(job) && !(service && service.agentStarting)) {
+      if (field.text === "") field.text = submittedPrompt
+      submittedPrompt = ""
+    }
+  }
   signal keyPressed(var event)
   signal dismissed()
   signal focusRequested()
@@ -126,7 +147,7 @@ FocusScope {
 
   function watchJob() {
     if (!opened || !service || !job) return
-    if (submittedPrompt !== "" && String(job.id) !== submittedJobId) {
+    if (submittedPrompt !== "" && submittedScope === queueScope && String(job.id) !== submittedJobId) {
       if (field.text === submittedPrompt) field.text = ""
       submittedPrompt = ""
     }
@@ -167,7 +188,7 @@ FocusScope {
     return submit(field.text)
   }
   function newChat() {
-    if (working) return
+    if (working || pending.busy) return
     ignoredJobId = defaultJob ? String(defaultJob.id) : ""
     viewedJobId = ""
     viewedConversationId = ""
@@ -218,9 +239,22 @@ FocusScope {
     })
   }
   function submit(promptText) {
-    if (!service || working) return false
+    if (!service) return false
     var prompt = String(promptText || "").trim()
     if (prompt === "") return false
+    if (working || pending.busy) {
+      if (!job && submittedScope !== queueScope && !pending.busy) {
+        localError = "AI is starting another request. Try again shortly."
+        return false
+      }
+      var queued = pending.add(prompt, submittedScope === queueScope && submittedPrompt !== "")
+      if (queued) {
+        field.text = ""; localError = ""; answerFlick.followEnd = true
+        if (job) { viewedJobId = String(job.id); viewedConversationId = String(job.conversationId || job.id) }
+      }
+      else localError = pending.error
+      return queued
+    }
     field.text = prompt
     localError = ""
     if (job && !job.canContinue) {
@@ -233,6 +267,8 @@ FocusScope {
           : service.askAgent(messageId, prompt, accountId)))
     if (!accepted) localError = service.agentError || "AI could not start. Check the message and try again."
     else {
+      field.text = ""
+      submittedScope = queueScope
       submittedPrompt = prompt
       submittedJobId = job ? String(job.id) : ""
       answerFlick.followEnd = true
@@ -291,7 +327,7 @@ FocusScope {
         panelFontFamily: root.panelFontFamily
         collection: moreMenu.rows
         cursorIndex: moreMenu.cursorIndex
-        enabled: !root.working
+        enabled: !root.working && !pending.busy
         onActivated: { moreMenu.close(); root.newChat() }
       }
       MenuActionRow {
@@ -367,7 +403,7 @@ FocusScope {
         id: answerFlick
         visible: !root.historyMode
         width: parent.width
-        height: Math.max(Style.space(32), content.height - y - controls.implicitHeight - requestRow.implicitHeight - statusText.implicitHeight - Style.space(8) * (controls.implicitHeight > 0 ? 3 : 2)
+        height: Math.max(Style.space(32), content.height - y - controls.implicitHeight - pendingRows.implicitHeight - (pendingRows.visible ? Style.space(8) : 0) - requestRow.implicitHeight - statusText.implicitHeight - Style.space(8) * (controls.implicitHeight > 0 ? 3 : 2)
           - (changedNotice.visible ? changedNotice.implicitHeight + Style.space(8) : 0))
         contentWidth: width
         contentHeight: Math.max(height, chat.implicitHeight)
@@ -522,13 +558,78 @@ FocusScope {
           onClicked: root.applyAnswer(true)
         }
       }
+      Flickable {
+        id: pendingRows
+        objectName: "agent-pending-messages"
+        visible: pending.busy && pending.visibleHere && !root.historyMode
+        width: parent.width
+        implicitHeight: visible ? Math.min(Style.space(100), pendingContent.implicitHeight) : 0
+        contentHeight: pendingContent.implicitHeight
+        contentWidth: width
+        clip: true
+        boundsBehavior: Flickable.StopAtBounds
+        WheelScroller { view: pendingRows }
+        QQC.ScrollBar.vertical: QQC.ScrollBar {}
+        Column {
+          id: pendingContent
+          width: pendingRows.width
+          spacing: Style.space(4)
+        Repeater {
+          model: pending.visibleHere ? pending.messages : []
+          Row {
+            required property string modelData
+            required property int index
+            width: pendingRows.width
+            spacing: Style.space(4)
+            QQC.AbstractButton {
+              id: pendingMessageButton
+              text: (pending.dispatching && parent.index === 0 ? "Sending · " : (pending.paused ? "Paused · " : "Pending · ")) + parent.modelData
+              width: parent.width - removePending.width - parent.spacing
+              height: Style.spacing.popupRowHeight
+              padding: Style.space(6)
+              hoverEnabled: true
+              focusPolicy: Qt.StrongFocus
+              enabled: !(pending.dispatching && parent.index === 0)
+              contentItem: Text {
+                text: pendingMessageButton.text
+                textFormat: Text.PlainText
+                color: pendingMessageButton.hovered || pendingMessageButton.activeFocus ? root.textColor : root.dimColor
+                font.family: root.panelFontFamily
+                font.pixelSize: Style.font.caption
+                verticalAlignment: Text.AlignVCenter
+                elide: Text.ElideRight
+              }
+              background: Rectangle { color: Qt.rgba(root.textColor.r, root.textColor.g, root.textColor.b, 0.04) }
+              PanelToolTip { visible: pendingMessageButton.hovered; text: "Edit pending message"; fontFamily: root.panelFontFamily }
+              onClicked: {
+                if (field.text !== "") { root.localError = "Finish the current input before editing a pending message."; return }
+                field.text = pending.remove(parent.index)
+                root.takeFocus()
+              }
+            }
+            Button {
+              id: removePending
+              text: "×"
+              width: Style.space(20)
+              foreground: root.dimColor
+              accent: root.accentColor
+              fontFamily: root.panelFontFamily
+              fontSize: Style.font.caption
+              enabled: !(pending.dispatching && parent.index === 0)
+              tooltipText: "Remove pending message"
+              onClicked: pending.remove(parent.index)
+            }
+          }
+        }
+      }
+      }
       Text {
         id: statusText
         visible: !root.historyMode
         objectName: "agent-chat-status"
         width: parent.width
         textFormat: Text.PlainText
-        text: root.errorText || (root.working ? Agent.workingText(root.job, root.statusNow, root.preparationStarted)
+        text: root.errorText || (pending.visibleHere ? pending.error : "") || (root.working ? Agent.workingText(root.job, root.statusNow, root.preparationStarted)
           + (Agent.progressText(root.job) ? "\n" + Agent.progressText(root.job) : "")
           : (root.job ? Agent.stateLabel(root.job) : "Ask your system AI about this mail."))
         color: root.errorText !== "" ? root.urgentColor : root.dimColor
