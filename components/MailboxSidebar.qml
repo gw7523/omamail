@@ -21,6 +21,7 @@ Item {
   required property string panelFontFamily
   property bool collapsed: false
   property bool calendarSelected: false
+  property string menuLabelPath: ""
 
   signal mailboxSelected(string key)
   signal labelSelected(string labelId, string name)
@@ -140,10 +141,11 @@ Item {
           }
           slotNumber: modelData.selectable ? Model.slotNumberOf(root.slots, "label", modelData.id) : 0
           count: modelData.unread
-          selected: modelData.selectable && !root.calendarSelected && !!root.service
-            && root.service.rawQuery !== ""
-            && root.service.rawQuery
-              === Provider.labelQuery(root.service.providerId, modelData.rawName)
+          selected: root.menuLabelPath === modelData.path
+            || (modelData.selectable && !root.calendarSelected && !!root.service
+              && root.service.rawQuery !== ""
+              && root.service.rawQuery
+                === Provider.labelQuery(root.service.providerId, modelData.rawName))
           onActivated: {
             if (modelData.selectable) root.labelSelected(modelData.id, modelData.rawName)
             else root.folderToggled(modelData.path)

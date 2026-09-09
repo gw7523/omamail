@@ -1833,6 +1833,8 @@ Item {
           visible: !root.compact && !root.showPage && !root.composing
           collapsed: root.sidebarCollapsed
           calendarSelected: root.calendarVisible
+          menuLabelPath: labelMenu.opened && !!root.service
+            && labelMenu.accountId === root.service.activeAccountId ? labelMenu.labelPath : ""
           service: root.service
           textColor: root.foreground
           accentColor: root.accent

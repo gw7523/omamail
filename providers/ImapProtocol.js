@@ -1090,16 +1090,31 @@ function encodeMailbox(name) {
 // name again turns its "&" into "&-" and names a folder that does not exist.
 // A RENAME carries every folder beneath the old name with it, which is what
 // moving a folder under another parent is.
+// Refuse an unrepresentable identity before quoting or encoding can change it.
+function validFolderName(value) {
+  var text = String(value === undefined || value === null ? "" : value)
+  if (text === "" || /[\x00-\x1f\x7f]/.test(text)) return false
+  for (var i = 0; i < text.length; i++) {
+    var code = text.charCodeAt(i)
+    if (code >= 0xd800 && code <= 0xdbff) {
+      var next = text.charCodeAt(++i)
+      if (!(next >= 0xdc00 && next <= 0xdfff)) return false
+    } else if (code >= 0xdc00 && code <= 0xdfff) return false
+  }
+  return true
+}
+
 function createCommand(name) {
-  return "CREATE " + quote(encodeMailbox(name))
+  return validFolderName(name) ? "CREATE " + quote(encodeMailbox(name)) : ""
 }
 
 function renameCommand(fromWire, toName) {
+  if (!validFolderName(fromWire) || !validFolderName(toName)) return ""
   return "RENAME " + quote(fromWire) + " " + quote(encodeMailbox(toName))
 }
 
 function deleteCommand(wireName) {
-  return "DELETE " + quote(wireName)
+  return validFolderName(wireName) ? "DELETE " + quote(wireName) : ""
 }
 
 // The SPECIAL-USE attributes this plugin cares about, mapped to the folder the
