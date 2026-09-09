@@ -206,7 +206,11 @@ Item {
   // reader.
   readonly property bool assistantOpen: agentPrompt.opened || composeAgent.opened
   readonly property var activeAssistant: composeAgent.opened ? composeAgent : (agentPrompt.opened ? agentPrompt : null)
-  readonly property real assistantWidth: assistantOpen ? Math.min(Style.space(420), window.width * 0.45) : 0
+  property real preferredAssistantWidth: 0
+  readonly property real assistantMaxWidth: Math.max(0, Math.min(window.width * 0.65, window.width - Style.space(320)))
+  readonly property real assistantMinWidth: Math.min(Style.space(280), assistantMaxWidth)
+  readonly property real assistantWidth: assistantOpen ? Math.max(assistantMinWidth, Math.min(assistantMaxWidth,
+    preferredAssistantWidth > 0 ? preferredAssistantWidth : Math.min(Style.space(420), window.width * 0.45))) : 0
   property bool assistantEditing: false
   readonly property real mailWidth: window.width - assistantWidth
   readonly property bool wide: mailWidth >= Style.space(1000)
@@ -1915,21 +1919,7 @@ Item {
               if (root.assistantOpen) { agentPrompt.close(); composeAgent.close() }
               else root.runShortcut("askAgent", "Alt+G")
             }
-            Rectangle {
-              id: aiAttentionHalo
-              anchors.fill: parent
-              anchors.margins: -1
-              color: "transparent"
-              border.width: Style.normalBorderWidth
-              border.color: root.accent
-              visible: !!root.service && !!root.service.agentAttention && !root.assistantOpen
-              SequentialAnimation on opacity {
-                running: aiAttentionHalo.visible
-                loops: Animation.Infinite
-                NumberAnimation { from: 0.15; to: 1; duration: 900; easing.type: Easing.InOutSine }
-                NumberAnimation { from: 1; to: 0.15; duration: 900; easing.type: Easing.InOutSine }
-              }
-            }
+
           }
 
         }
@@ -2816,6 +2806,28 @@ Item {
         anchors.bottom: statusBar.top
         width: root.assistantWidth
         visible: root.assistantOpen
+        MouseArea {
+          objectName: "assistant-splitter"
+          anchors.left: parent.left
+          anchors.top: parent.top
+          anchors.bottom: parent.bottom
+          width: Style.space(5)
+          z: 100
+          cursorShape: Qt.SplitHCursor
+          property real grabbedAt: 0
+          property real grabbedWidth: 0
+          onPressed: function(mouse) {
+            grabbedAt = mapToItem(focusScope, mouse.x, mouse.y).x
+            grabbedWidth = root.assistantWidth
+          }
+          onPositionChanged: function(mouse) {
+            if (!pressed) return
+            var moved = mapToItem(focusScope, mouse.x, mouse.y).x - grabbedAt
+            root.preferredAssistantWidth = Math.max(root.assistantMinWidth,
+              Math.min(root.assistantMaxWidth, grabbedWidth - moved))
+          }
+          onDoubleClicked: root.preferredAssistantWidth = 0
+        }
         AgentPrompt {
           id: agentPrompt
           onOpenedChanged: if (opened) composeAgent.close()

@@ -7,9 +7,10 @@ The installed Claude CLI uses its normal system login and provider configuration
 
 Choose the outline **AI icon** button beside Compose in the window header, the
 message menu, or `Alt+G` in the list, reader or composer. The right dock displays
-the conversation, aligned to the bottom with older turns above. User messages
+the conversation, aligned to the bottom with older turns above. Drag its left
+edge to resize; double-click the divider to restore the default width. User messages
 have a background and a › marker; AI replies have no background and each offers
-a ghost copy icon that copies the original reply. Bold and code are formatted
+a copy icon after generation finishes that copies the original reply. Bold and code are formatted
 through an escaping formatter that cannot create links or remote resources. Execution status appears just above the input, which starts at one line and
 grows with newlines.
 Type `/` to show commands, then use Up/Down and Return or click a suggestion.
@@ -36,8 +37,8 @@ only on mail titles and bodies, excluding addresses and metadata. Their results
 separate Title and Body; draft insertion takes only the Body section, so a
 translated title is not accidentally inserted into the body. In a draft, **Insert at cursor**
 and **Replace body** apply only a completed successful reply; neither sends mail.
-Replacement is two text edits and can require two undo steps. The mail list has no AI icon. The breathing
-attention indicator on the header AI button remains until the result is viewed.
+Replacement is two text edits and can require two undo steps. The mail list has no AI icon. The header AI button stays static without a
+breathing animation.
 
 ## Background bridge
 

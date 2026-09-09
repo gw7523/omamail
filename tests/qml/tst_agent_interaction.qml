@@ -153,6 +153,15 @@ Item {
       tryCompare(copy,"copied",false,2500)
       compare(copy.contentItem.name,"copy")
     }
+    function test_copy_appears_only_after_response_finishes() {
+      service.jobs=[{id:"reply",messageId:"m1",accountId:service.activeAccountId,state:"running"}]
+      popup.openCenteredFor("m1","Mail")
+      service.agentShownTranscript=[{role:"assistant",text:"Partial reply"}]
+      verify(waitForRendering(popup))
+      compare(findChild(popup,"agent-copy-reply").visible,false)
+      service.jobs=[{id:"reply",messageId:"m1",accountId:service.activeAccountId,state:"done"}]
+      compare(findChild(popup,"agent-copy-reply").visible,true)
+    }
     function test_working_status_elapsed_and_interrupt() {
       service.jobs=[{id:"active",messageId:"m1",accountId:service.activeAccountId,state:"running",created:100,progress:"Reading supplied context"}]
       popup.openCenteredFor("m1","Mail")

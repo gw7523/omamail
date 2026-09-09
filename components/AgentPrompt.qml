@@ -4,6 +4,7 @@ import qs.Commons
 import qs.Ui
 import "../agent/Agent.js" as Agent
 import "../agent/ChatText.js" as ChatText
+import "Menu.js" as Menu
 
 // A contextual conversation. The system AI streams public output in the
 // background; applying a suggestion remains an explicit owner action.
@@ -254,6 +255,9 @@ FocusScope {
     objectName: "agent-more-menu"
     width: Math.min(Style.space(200), root.width - Style.space(24))
     padding: Style.space(4)
+    focus: true
+    property int cursorIndex: -1
+    readonly property var rows: [newChatRow, historyRow]
     closePolicy: QQC.Popup.CloseOnEscape | QQC.Popup.CloseOnPressOutside
     function place() {
       var anchor = closeButton.mapToItem(root, 0, 0)
@@ -262,28 +266,43 @@ FocusScope {
       if (next + height > root.height) next = anchor.y - height
       y = Math.max(0, Math.min(next, root.height - height))
     }
-    onOpened: place()
+    onOpened: { cursorIndex = Menu.firstSelectable(rows); place() }
     onHeightChanged: if (visible) place()
     background: Rectangle { color: root.popupBackgroundColor; border.color: root.popupBorderColor }
     contentItem: Column {
       spacing: Style.space(2)
-      Repeater {
-        model: ["New chat", "History..."]
-        Button {
-          required property string modelData
-          required property int index
-          width: moreMenu.availableWidth
-          height: Style.spacing.popupRowHeight
-          text: modelData
-          foreground: root.textColor
-          accent: root.accentColor
-          fontFamily: root.panelFontFamily
-          fontSize: Style.font.bodySmall
-          bordered: false
-          focusable: true
-          enabled: index !== 0 || !root.working
-          onClicked: { moreMenu.close(); if (index === 0) root.newChat(); else root.showHistory() }
+      focus: true
+      Keys.onPressed: function(event) {
+        if (event.key === Qt.Key_Up || event.key === Qt.Key_Down) {
+          moreMenu.cursorIndex = Menu.nextSelectable(moreMenu.rows, moreMenu.cursorIndex, event.key === Qt.Key_Up ? -1 : 1)
+          event.accepted = true
+        } else if (event.key === Qt.Key_Return || event.key === Qt.Key_Enter) {
+          var row = moreMenu.rows[moreMenu.cursorIndex]
+          if (row && row.enabled) row.activated()
+          event.accepted = true
         }
+      }
+      MenuActionRow {
+        id: newChatRow
+        objectName: "agent-new-chat-menu-row"
+        width: moreMenu.availableWidth
+        text: "New chat"
+        textColor: root.textColor
+        panelFontFamily: root.panelFontFamily
+        collection: moreMenu.rows
+        cursorIndex: moreMenu.cursorIndex
+        enabled: !root.working
+        onActivated: { moreMenu.close(); root.newChat() }
+      }
+      MenuActionRow {
+        id: historyRow
+        width: moreMenu.availableWidth
+        text: "History..."
+        textColor: root.textColor
+        panelFontFamily: root.panelFontFamily
+        collection: moreMenu.rows
+        cursorIndex: moreMenu.cursorIndex
+        onActivated: { moreMenu.close(); root.showHistory() }
       }
     }
   }
@@ -322,8 +341,8 @@ FocusScope {
         Button {
           id: closeButton
           objectName: "agent-more-button"
-          width: Style.space(24)
-          height: Style.space(24)
+          width: Style.space(20)
+          height: Style.space(20)
           bordered: true
           focusable: true
           horizontalPadding: 0
@@ -337,7 +356,7 @@ FocusScope {
           ActionIcon {
             anchors.centerIn: parent
             name: "more"
-            iconSize: Style.font.icon
+            iconSize: Style.font.iconSmall
             color: root.dimColor
             fontFamily: root.panelFontFamily
           }
@@ -381,7 +400,7 @@ FocusScope {
               required property int index
               readonly property bool userMessage: entryRole === "user"
               width: chat.width
-              height: entry.implicitHeight + (userMessage ? Style.space(16) : (entryRole === "assistant" ? replyCopy.height + Style.space(4) : 0))
+              height: entry.implicitHeight + (userMessage ? Style.space(16) : (replyCopy.visible ? replyCopy.height + Style.space(4) : 0))
               Rectangle {
                 anchors.fill: parent
                 visible: parent.userMessage
@@ -406,7 +425,7 @@ FocusScope {
                 objectName: "agent-copy-reply"
                 property bool copied: false
                 Timer { id: copyFeedback; interval: 1600; onTriggered: replyCopy.copied = false }
-                visible: entryRole === "assistant"
+                visible: entryRole === "assistant" && !root.working
                 anchors.left: parent.left
                 anchors.bottom: parent.bottom
                 width: Style.font.iconSmall

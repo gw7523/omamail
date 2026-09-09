@@ -196,6 +196,7 @@ Item {
       app.loadComposeRecovery("")
       app.clearComposeRecovery()
       mailService.sendPending = false
+      app.preferredAssistantWidth = 0
       mailService.draftAgentJobs = []; mailService.cancelledAgentId = ""
       mailService.agentRequests = 0
       mailService.lastAgentPrompt = ""
@@ -260,6 +261,26 @@ Item {
       tryCompare(body,"activeFocus",true)
     }
 
+    function test_ai_dock_resizes_from_left_edge_and_keeps_width() {
+      app.open("{}")
+      app.startCompose("new")
+      app.runShortcut("askAgent", "Alt+G")
+      var dock=named(app,"assistant-dock")
+      var splitter=named(app,"assistant-splitter")
+      verify(waitForRendering(dock))
+      var before=dock.width
+      mouseDrag(splitter,2,100,-60,0)
+      verify(dock.width > before)
+      verify(dock.width <= app.assistantMaxWidth)
+      var resized=dock.width
+      named(app,"compose-agent").close()
+      app.runShortcut("askAgent", "Alt+G")
+      compare(dock.width,resized)
+      app.preferredAssistantWidth=9999
+      compare(dock.width,app.assistantMaxWidth)
+      mouseDoubleClickSequence(splitter,2,100)
+      compare(app.preferredAssistantWidth,0)
+    }
     function test_escape_interrupts_running_ai_and_keeps_chat_open() {
       app.open("{}")
       app.startCompose("new")
