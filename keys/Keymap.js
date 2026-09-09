@@ -13,7 +13,7 @@
 // follows it — a context that is not text entry parks the focus rather than
 // leaving it wherever the last click put it. Keeping those two as separate
 // things is what let a dismissed compose field go on eating j and k.
-var CONTEXTS = ["list", "reader", "search", "compose", "page", "calendar", "agent"]
+var CONTEXTS = ["list", "reader", "search", "compose", "page", "calendar", "assistant"]
 
 // Shorthands, so a row says where it lives rather than restating the set.
 var MAIL = ["list", "reader"]
@@ -166,19 +166,15 @@ var BINDINGS = [
     group: "Going", label: "Switch account" },
   // The message agent, on the cursor row. A popup, so the same shape as the
   // account switcher: opened through the table, then answering its own keys.
-  { id: "askAgent", keys: ["Alt+G"], contexts: MAIL,
-    group: "Acting", label: "Ask the agent about the message" },
+  { id: "askAgent", keys: ["Alt+G"], contexts: ["list", "reader", "compose"],
+    group: "Acting", label: "Ask AI about the message or draft" },
 
   { id: "calendar", keys: ["Alt+C"], contexts: ["list", "reader", "calendar"],
     group: "Going", label: "Switch between mail and calendar" },
-  { id: "mailView", keys: ["Ctrl+Shift+M"], contexts: ["list", "reader", "calendar", "agent"],
+  { id: "mailView", keys: ["Ctrl+Shift+M"], contexts: ["list", "reader", "calendar"],
     group: "Going", label: "Go to mail" },
-  { id: "calendarView", keys: ["Ctrl+Shift+C"], contexts: ["list", "reader", "calendar", "agent"],
+  { id: "calendarView", keys: ["Ctrl+Shift+C"], contexts: ["list", "reader", "calendar"],
     group: "Going", label: "Go to calendar" },
-  // The agent pane is a text field first, so its context binds no bare key;
-  // this and the two above are how the keyboard gets in and out of it.
-  { id: "agentView", keys: ["Ctrl+Shift+G"], contexts: ["list", "reader", "calendar", "agent"],
-    group: "Going", label: "Go to the agent pane" },
   { id: "toggleSidebar", keys: ["["], contexts: ["list", "reader", "calendar"],
     group: "Going", label: "Show or hide the sidebar" },
 
@@ -211,11 +207,11 @@ var BINDINGS = [
 // the toast offers Alt+Z and its button.
 function contextFor(state) {
   var value = state || ({})
+  if (value.assistantEditing) return "assistant"
   if (value.showPage) return "page"
   if (value.composing) return "compose"
   if (value.searchFocused) return "search"
   if (value.calendarVisible) return "calendar"
-  if (value.agentVisible) return "agent"
   if (value.currentView === "reader") return "reader"
   return "list"
 }

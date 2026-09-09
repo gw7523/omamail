@@ -52,6 +52,7 @@ Item {
   signal composeRequested(string mode)
   signal mailtoRequested(string url)
   signal actionRequested(string action)
+  signal agentRequested(real sceneX, real sceneY)
   // A right-click on the From line or the To line: the addresses on it, and
   // where the menu goes. What is done with them is the window's decision.
   signal addressMenuRequested(var addresses, real sceneX, real sceneY)
@@ -852,8 +853,7 @@ Item {
           foreground: root.dimColor; hoverColor: root.textColor; fontFamily: root.panelFontFamily
           onClicked: root.actionRequested("trash")
         }
-        // The agent, only where one is configured: a button that could not
-        // act is the button the capability rule exists to keep off the panel.
+        // System AI is reachable here even before a default has been selected.
         // Lit while its popup is up, like every trigger, and lit in the accent
         // while a job is running so the reader says so without being asked.
         IconButton {
@@ -862,12 +862,15 @@ Item {
           x: trashButton.x + trashButton.width + messageActions.gap
           y: Math.round((parent.height - height) / 2)
           visible: !!root.service && root.service.hasAgent
-          iconName: "agent"; tooltipText: "Ask the agent · Alt+G"
+          iconName: "agent"; tooltipText: "Ask AI... · Alt+G"
           foreground: root.agentWorking ? root.accentColor : root.dimColor
           hoverColor: root.textColor; fontFamily: root.panelFontFamily
           selected: root.agentOpen
           attention: root.agentAttention
-          onClicked: root.actionRequested("agent")
+          onClicked: {
+            var scene = mapToGlobal(0, 0)
+            root.agentRequested(scene.x, scene.y)
+          }
         }
 
       }

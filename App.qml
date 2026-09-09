@@ -204,8 +204,12 @@ Item {
   // Two breakpoints, not a continuum: three columns, list-plus-reader with the
   // sidebar collapsed to a strip, and a single column that swaps list for
   // reader.
-  readonly property bool wide: window.width >= Style.space(1000)
-  readonly property bool compact: window.width < Style.space(760)
+  readonly property bool assistantOpen: agentPrompt.opened || composeAgent.opened
+  readonly property real assistantWidth: assistantOpen ? Math.min(Style.space(420), window.width * 0.45) : 0
+  property bool assistantEditing: false
+  readonly property real mailWidth: window.width - assistantWidth
+  readonly property bool wide: mailWidth >= Style.space(1000)
+  readonly property bool compact: mailWidth < Style.space(760)
 
   property string cursorId: ""
   // The rows ticked for a bulk action, by id. Like the cursor, a fact about
@@ -346,15 +350,15 @@ Item {
   readonly property string page: navPage.kind
   readonly property string overlay: navOverlay ? navOverlay.kind : ""
   readonly property string currentView: page === "reader" ? "reader"
-    : ((page === "calendar" || page === "calendarDetail") ? "calendar"
-      : (page === "agent" ? "agent" : "list"))
+    : ((page === "calendar" || page === "calendarDetail") ? "calendar" : "list")
   readonly property bool calendarVisible: currentView === "calendar"
-  readonly property bool agentVisible: currentView === "agent"
   readonly property bool showSettings: page === "settings"
   readonly property bool showPicker: page === "picker"
   readonly property bool showSetup: page === "setup"
   // Anything the window goes *into*. The mail chrome stands down for all of it.
   readonly property bool showPage: showSettings || showPicker || showSetup
+  onComposingChanged: { if (!composing) composeAgent.close(); else agentPrompt.close() }
+  onShowPageChanged: if (showPage) { agentPrompt.close(); composeAgent.close() }
   readonly property bool composing: overlay === "compose" || overlay === "eventComposer"
   readonly property bool shortcutHelpVisible: overlay === "help"
   readonly property string editingProvider: page === "setup" ? String(navPage.provider || "") : ""
@@ -644,14 +648,6 @@ Item {
   function showCalendar() {
     navUntouched = false
     nav = Nav.replaceRoot(nav, "calendar")
-  }
-
-  // The agent pane is the third root, beside mail and the calendar.
-  function showAgent() {
-    if (!service || !service.hasAgent) return false
-    navUntouched = false
-    nav = Nav.replaceRoot(nav, "agent")
-    return true
   }
 
   // Moving the cursor has to bring the row with it. The list is a Column in a
@@ -1048,17 +1044,7 @@ Item {
     return true
   }
 
-  // The pane, opened on one job: from a row's glyph, or the popup's button.
-  function showAgentJob(jobId) {
-    if (!showAgent()) return false
-    agentView.openOn(jobId)
-    return true
-  }
-
-  // A row's glyph shows the job's card; the popup is for asking.
   function openAgentFromRow(id, sceneX, sceneY) {
-    var job = service ? service.agentJobs[String(id || "")] : null
-    if (job) return showAgentJob(String(job.id))
     return openAgentAt(id, sceneX, sceneY)
   }
 
@@ -1195,6 +1181,7 @@ Item {
     }
     if (id === "toggleCheck") return toggleCheck(cursorId)
     if (id === "askAgent") {
+      if (root.composing) { composeAgent.open(); return true }
       var target = currentView === "reader" && service ? service.selectedId : cursorId
       return openAgentCentered(target)
     }
@@ -1238,7 +1225,6 @@ Item {
       return
     }
     if (id === "mailView") return backToList()
-    if (id === "agentView") { showAgent(); return }
     if (id === "calendarView") {
       showCalendar()
       calendarView.refresh()
@@ -1262,6 +1248,8 @@ Item {
   // purpose: a QQC.Popup with CloseOnEscape consumes the key itself, so a
   // branch for them here would never run. Everything else is the history.
   function goBack() {
+    if (composeAgent.opened) { composeAgent.close(); return }
+    if (agentPrompt.opened) { agentPrompt.close(); return }
     // A query being typed is the nearest thing to leave: clear it if there is
     // one, then hand the keyboard back. Parked directly rather than through
     // applyContextFocus, which would still read the context as "search" —
@@ -1333,6 +1321,7 @@ Item {
       root.closeLabelPopups()
       // The agent popup is about one account's message too.
       agentPrompt.close()
+      composeAgent.close()
     }
     function onSidebarWidthChanged() { root.sidebarWidth = root.service.sidebarWidth }
     function onListWidthChanged() { root.listWidth = root.service.listWidth }
@@ -1662,11 +1651,11 @@ Item {
       onActiveFocusChanged: if (!activeFocus) ctrlDown = false
 
       readonly property string keyContext: Keymap.contextFor(({
+        assistantEditing: root.assistantOpen && root.assistantEditing,
         showPage: root.showPage,
         composing: root.composing,
         searchFocused: searchBar.fieldFocused,
         calendarVisible: root.calendarVisible,
-        agentVisible: root.agentVisible,
         currentView: root.currentView,
         sendPending: !!root.service && root.service.sendPending
       }))
@@ -1680,13 +1669,22 @@ Item {
       // and a closed compose field kept swallowing j and k. One mechanism now,
       // and there is nothing to keep in step.
       onKeyContextChanged: Qt.callLater(applyContextFocus)
+      function focusWithin(container) {
+        var item = focusScope.Window.activeFocusItem
+        while (item) { if (item === container) return true; item = item.parent }
+        return false
+      }
       function applyContextFocus() {
-        if (keyContext === "compose") {
+        if (keyContext === "assistant") {
+          if (composeAgent.opened && !composeAgent.activeFocus) composeAgent.takeFocus()
+          else if (agentPrompt.opened && !agentPrompt.activeFocus) agentPrompt.takeFocus()
+        }
+        else if (keyContext === "compose") {
+          if (focusWithin(compose)) return
           if (eventComposer.opened) eventComposer.takeFocus()
           else compose.takeFocus()
         }
         else if (keyContext === "search") searchBar.focusField()
-        else if (keyContext === "agent") agentView.takeFocus()
         else parkKeyboard()
       }
 
@@ -1708,6 +1706,7 @@ Item {
 
       Item {
         id: header
+        anchors.rightMargin: root.assistantWidth
         anchors.top: parent.top
         anchors.left: parent.left
         anchors.right: parent.right
@@ -1788,7 +1787,7 @@ Item {
             width: Math.min(Style.space(340), parent.width)
             // Below this it is a slot too small to type in; the shortcut still
             // works and reopens it as the window grows.
-            visible: !root.showPage && !root.composing && !root.calendarVisible && !root.agentVisible
+            visible: !root.showPage && !root.composing && !root.calendarVisible
               && parent.width >= Style.space(120)
           textColor: root.foreground
           accentColor: root.accent
@@ -1819,27 +1818,6 @@ Item {
           // Checking for mail and writing one are both things you do to the
           // mailbox as a whole, so they sit together. The menu is the window's
           // own, and it stays on the left with the mark.
-          // The agent pane, from the header as well as from the rail's foot:
-          // the rail is gone in a narrow window and folded in a collapsed one,
-          // and this is the one place that is always there. Lit while the
-          // pane is up, in the accent while a job is running.
-          IconButton {
-            objectName: "header-agent-button"
-            anchors.verticalCenter: parent.verticalCenter
-            visible: !root.showPage && !root.composing && !!root.service && root.service.hasAgent
-            iconName: "agent"
-            tooltipText: root.agentVisible ? "Back to mail · Ctrl+Shift+M" : "Agent pane · Ctrl+Shift+G"
-            foreground: !!root.service && root.service.agentBusy ? root.accent : root.dim
-            hoverColor: root.foreground
-            fontFamily: root.fontFamily
-            selected: root.agentVisible
-            attention: !!root.service && root.service.agentAttention
-            onClicked: {
-              if (root.agentVisible) root.backToList()
-              else root.showAgent()
-            }
-          }
-
           IconButton {
             objectName: "refresh-button"
             anchors.verticalCenter: parent.verticalCenter
@@ -1883,7 +1861,7 @@ Item {
           Button {
             objectName: "compose-button"
             anchors.verticalCenter: parent.verticalCenter
-            visible: !root.showPage && !root.composing && !root.calendarVisible && !root.agentVisible
+            visible: !root.showPage && !root.composing && !root.calendarVisible
             text: "Compose"
             tooltipText: "Compose · c"
             foreground: root.dim
@@ -1908,6 +1886,7 @@ Item {
 
       Item {
         id: body
+        anchors.rightMargin: root.assistantWidth
         anchors.top: header.visible ? header.bottom : parent.top
         anchors.left: parent.left
         anchors.right: parent.right
@@ -1925,8 +1904,6 @@ Item {
           visible: !root.compact && !root.showPage && !root.composing
           collapsed: root.sidebarCollapsed
           calendarSelected: root.calendarVisible
-          agentSelected: root.agentVisible
-          onAgentRequested: root.showAgent()
           menuLabelPath: labelMenu.opened && !!root.service
             && labelMenu.accountId === root.service.activeAccountId ? labelMenu.labelPath : ""
           service: root.service
@@ -2130,7 +2107,7 @@ Item {
           anchors.right: parent.right
           anchors.top: parent.top
           anchors.bottom: parent.bottom
-          visible: !root.showPage && !root.composing && !root.calendarVisible && !root.agentVisible
+          visible: !root.showPage && !root.composing && !root.calendarVisible
             && (!root.compact || root.currentView === "reader")
           service: root.service
           textColor: root.foreground
@@ -2162,21 +2139,17 @@ Item {
           onMailtoRequested: function(url) {
             root.openDraft(Mailto.parse(url))
           }
+          onAgentRequested: function(sceneX, sceneY) { root.openAgentAt(root.service.selectedId, sceneX, sceneY) }
           agentOpen: agentPrompt.opened && !!root.service && agentPrompt.messageId === root.service.selectedId
           agentWorking: !!root.service && root.service.selectedId !== ""
-            && Agent.isActive(root.service.agentJobs[root.service.selectedId])
+            && Agent.isActive((root.service.agentJobs || {})[root.service.selectedId])
           agentAttention: !!root.service && root.service.selectedId !== ""
-            && root.service.agentAttentionByMessage[root.service.selectedId] === true
+            && (root.service.agentAttentionByMessage || {})[root.service.selectedId] === true
           onAddressMenuRequested: function(addresses, sceneX, sceneY) {
             addressMenu.openAt(addresses, sceneX, sceneY)
           }
           onActionRequested: function(action) {
             if (!root.service || root.service.selectedId === "") return
-            if (action === "agent") {
-              var scene = reader.mapToGlobal(reader.width / 2, Style.space(48))
-              root.openAgentAt(root.service.selectedId, scene.x, scene.y)
-              return
-            }
             // The toolbar acts on the message it is under, which is normally
             // the row the cursor is on — but with the rail up the reader can be
             // showing a *member*, and the list has no row for one. Moving the
@@ -2211,10 +2184,9 @@ Item {
           visible: opened && !root.showPage
           agentOpen: composeAgent.opened
           agentWorking: composeAgent.working
-          agentAttention: !!root.service && root.service.agentDraftJobs.length > 0
-            && Agent.wantsAttention(root.service.agentDraftJobs[0], [])
-            && !composeAgent.opened
-          onAgentRequested: function(sceneX, sceneY) { composeAgent.open() }
+          agentAttention: !!root.service && !!root.service.hasAgent
+            && root.service.agentJobWantsAttention(composeAgent.job) && !composeAgent.opened
+          onAgentRequested: function(sceneX, sceneY) { composeAgent.openAt(sceneX, sceneY) }
           service: root.service
           textColor: root.foreground
           backgroundColor: root.background
@@ -2261,23 +2233,6 @@ Item {
           panelFontFamily: root.fontFamily
         }
 
-        AgentView {
-          id: agentView
-          anchors.top: parent.top
-          anchors.right: parent.right
-          anchors.bottom: parent.bottom
-          anchors.left: sidebarSplitter.visible ? sidebarSplitter.right
-            : (sidebar.visible ? sidebar.right : parent.left)
-          visible: root.agentVisible && !root.showPage && !root.composing
-          z: 11
-          service: root.service
-          textColor: root.foreground
-          backgroundColor: root.background
-          accentColor: root.accent
-          urgentColor: root.urgent
-          dimColor: root.dim
-          panelFontFamily: root.fontFamily
-        }
 
         Rectangle {
           anchors.top: parent.top
@@ -2781,49 +2736,50 @@ Item {
         }
       }
 
-      AgentPrompt {
-        id: agentPrompt
-        objectName: "agent-prompt"
-        service: root.service
-        anchors.fill: parent
-        textColor: root.foreground
-        accentColor: root.accent
-        urgentColor: root.urgent
-        dimColor: root.dim
-        popupBackgroundColor: root.popupBackground
-        popupBorderColor: root.popupBorder
-        panelFontFamily: root.fontFamily
-        // Live while the popup is up: the state and the last line follow the
-        // job as the runner's listing changes under it.
-        job: root.service && messageId !== "" ? (root.service.agentJobFor(messageId, accountId) || null) : null
-        onAsked: function(id, prompt) { if (root.service) root.service.askAgent(id, prompt, agentPrompt.accountId) }
-        onAskedMany: function(ids, prompt) {
-          if (root.service && root.service.askAgentMany(ids, prompt, agentPrompt.accountId)) root.checkedIds = []
+      Item {
+        id: assistantDock
+        objectName: "assistant-dock"
+        anchors.right: parent.right
+        anchors.top: parent.top
+        anchors.bottom: statusBar.top
+        width: root.assistantWidth
+        visible: root.assistantOpen
+        AgentPrompt {
+          id: agentPrompt
+          onOpenedChanged: if (opened) composeAgent.close()
+          objectName: "agent-prompt"
+          service: root.service
+          anchors.fill: parent
+          textColor: root.foreground
+          accentColor: root.accent
+          urgentColor: root.urgent
+          dimColor: root.dim
+          popupBackgroundColor: root.popupBackground
+          popupBorderColor: root.popupBorder
+          panelFontFamily: root.fontFamily
+          onFocusRequested: { root.assistantEditing = true; Qt.callLater(focusScope.applyContextFocus) }
+          onEditingChanged: function(editing) { root.assistantEditing = editing }
+          onDismissed: { root.assistantEditing = false; Qt.callLater(focusScope.applyContextFocus) }
         }
-        onAnswered: function(jobId, answer) { if (root.service) root.service.answerAgent(jobId, answer) }
-        onPaneRequested: function(jobId) { root.showAgentJob(jobId) }
-        onLooked: function(jobId) { if (root.service) root.service.acknowledgeAgentJob(jobId) }
-        onCancelRequested: function(id) { if (root.service) root.service.cancelAgent(id, agentPrompt.accountId) }
-      }
 
-      ComposeAgent {
-        id: composeAgent
-        objectName: "compose-agent"
-        anchors.fill: parent
-        service: root.service
-        textColor: root.foreground
-        accentColor: root.accent
-        urgentColor: root.urgent
-        dimColor: root.dim
-        popupBackgroundColor: root.popupBackground
-        popupBorderColor: root.popupBorder
-        panelFontFamily: root.fontFamily
-        onAskRequested: function(ask) {
-          if (root.service) root.service.askAgentDraft(compose.currentFields(), ask)
+        ComposeAgent {
+          id: composeAgent
+          onOpenedChanged: if (opened) agentPrompt.close()
+          objectName: "compose-agent"
+          anchors.fill: parent
+          service: root.service
+          composer: compose
+          textColor: root.foreground
+          accentColor: root.accent
+          urgentColor: root.urgent
+          dimColor: root.dim
+          popupBackgroundColor: root.popupBackground
+          popupBorderColor: root.popupBorder
+          panelFontFamily: root.fontFamily
+          onFocusRequested: { root.assistantEditing = true; Qt.callLater(focusScope.applyContextFocus) }
+          onEditingChanged: function(editing) { root.assistantEditing = editing }
+          onDismissed: { root.assistantEditing = false; Qt.callLater(focusScope.applyContextFocus) }
         }
-        onReplaceRequested: function(text) { compose.replaceBody(text) }
-        onInsertRequested: function(text) { compose.insertAtCursor(text) }
-        onLooked: function(jobId) { if (root.service) root.service.acknowledgeAgentJob(jobId) }
       }
 
       LabelMenu {
@@ -2955,6 +2911,7 @@ Item {
       }
 
       MessageMenu {
+        onAgentRequested: function(id, sceneX, sceneY) { root.openAgentAt(id, sceneX, sceneY) }
         id: rowMenu
         objectName: "rowMenu"
         service: root.service

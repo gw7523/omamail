@@ -86,16 +86,31 @@ Item {
       return agent
     }
 
-    // Settings hands the command line to the service, which keeps it and
-    // writes it with the rest of the settings.
-    function test_the_agent_command_is_kept_when_set() {
+    function test_public_manifest_resolves_local_helper_directory() {
+      var saved = mailService.manifest
+      mailService.manifest = {id:"omamail",name:"Omamail"}
+      verify(mailService.pluginDir !== "", "Modern shell removes internal source metadata")
+      verify(mailService.pluginDir.indexOf("file:") !== 0)
+      verify(mailService.pluginDir.indexOf("/omamail") >= 0)
+      mailService.manifest = saved
+    }
+
+    function test_ai_uses_system_configuration() {
       seed(ada)
-      mailService.setAgentCommand("  claude -p  ")
-      tryCompare(mailService, "agentCommand", "claude -p")
+      mailService.settings = ({})
       compare(mailService.hasAgent, true)
-      mailService.setAgentCommand("")
-      tryCompare(mailService, "agentCommand", "")
-      compare(mailService.hasAgent, false)
+      verify(mailService.setAgentCommand === undefined)
+    }
+
+    function test_draft_request_uses_selected_from_owner() {
+      var agent = seed(ada)
+      var fields = {from: "bob@example.com", accountId: bob, draftKey: "unique-draft", to: "x@example.com", body: "Draft"}
+      verify(mailService.askAgentDraft(fields, "Rewrite"))
+      var payload = JSON.parse(agent.startPayload)
+      compare(payload.accountId, bob)
+      compare(payload.draftKey, "unique-draft")
+      compare(payload.draft.from, "bob@example.com")
+      verify(payload.command === undefined)
     }
 
     function test_bobs_row_neither_shows_nor_cancels_adas_job() {
@@ -114,21 +129,15 @@ Item {
     // draft answers.
     function test_a_popup_opened_on_ada_asks_and_cancels_for_ada() {
       var agent = seed(ada)
-      mailService.settings = ({ agentCommand: "true" })
       tryCompare(mailService, "hasAgent", true)
       var adas = mailService.accountAt(0)
       adas.messages = [{ id: "42:INBOX", threadId: "", subject: "Invoice", snippet: "", time: "", date: "",
         from: { email: "x@example.com", display: "X" }, unread: false, starred: false, inInbox: true, labelIds: ["INBOX"] }]
-      agent.jobs = agent.jobs.concat([{ id: "synthetic-A-draft", kind: "draft", accountId: ada, state: "done", created: 7, summary: "Shorter" }])
-      compare(mailService.agentDraftJobs.length, 1, "Ada's composer sees her draft answer")
+      agent.jobs = agent.jobs.concat([{ id: "synthetic-A-draft", kind: "draft", accountId: ada, draftKey: "draft-A", state: "done", created: 7, summary: "Shorter" }])
+      compare(mailService.agentJobsForDraft({accountId: ada, draftKey: "draft-A"}).length, 1, "Ada's composer sees her draft answer")
       mailService.accountList = Accounts.setActive(mailService.accountList, bob)
       tryCompare(mailService, "activeAccountId", bob)
-      compare(mailService.agentDraftJobs.length, 0, "Bob's composer is offered none of it")
-      verify(mailService.askAgent("42:INBOX", "File it", ada), "the ask goes through with Ada named")
-      var payload = JSON.parse(agent.startPayload)
-      compare(payload.accountId, ada)
-      compare(payload.messageId, "42:INBOX")
-      compare(mailService.askAgent("42:INBOX", "File it", bob), false, "Bob has no such message")
+      compare(mailService.agentJobsForDraft({accountId: bob, draftKey: "draft-A"}).length, 0, "Bob's composer is offered none of it")
       compare(mailService.cancelAgent("42:INBOX", ada), true, "Ada's job is cancelled from her popup")
       var cancels = startedCancels()
       compare(cancels.length, 1)

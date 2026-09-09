@@ -9,6 +9,18 @@ Item {
   QtObject {
     id: mailService
 
+    property bool hasAgent: true
+    property bool agentStarting: false
+    property string agentError: ""
+    property string agentShownId: ""
+    property string agentShownOutput: ""
+    property var agentJobs: ({})
+    property var agentAttentionByMessage: ({})
+    function agentJobsForDraft(fields) { return [] }
+    function agentJobWantsAttention(job) { return false }
+    function agentJobFor(id, owner) { return null }
+    function agentSelectionJob(ids, owner) { return null }
+    function refreshAgentJobs() {}
     property bool ready: true
     property bool anyAccountReady: true
     property bool sendPending: true
@@ -203,6 +215,50 @@ Item {
         compose.reset()
         compose.opened = false
       }
+    }
+
+    function test_ai_dock_reserves_space_and_escape_keeps_the_draft() {
+      app.open("{}")
+      app.startCompose("new")
+      var compose=composeView()
+      var originalWidth=compose.width
+      var body=named(compose,"compose-body-editor")
+      body.text="Keep draft"
+      body.forceActiveFocus()
+      app.runShortcut("askAgent", "Alt+G")
+      var dock=named(app,"compose-agent")
+      tryCompare(dock,"opened",true)
+      verify(compose.width < originalWidth)
+      compare(compose.width + named(app,"assistant-dock").width, originalWidth)
+      tryCompare(app,"assistantEditing",true)
+      var field=named(dock,"agent-prompt-field")
+      tryCompare(field,"activeFocus",true)
+      keyClick(Qt.Key_E)
+      verify(field.text.indexOf("e") === 0)
+      keyClick(Qt.Key_Escape)
+      tryCompare(dock,"opened",false)
+      compare(app.composing,true)
+      compare(body.text,"Keep draft")
+      compare(compose.width,originalWidth)
+      tryCompare(body,"activeFocus",true)
+    }
+
+    function test_ai_dock_allows_returning_to_draft_fields() {
+      app.open("{}")
+      app.startCompose("new")
+      var compose=composeView()
+      app.runShortcut("askAgent", "Alt+G")
+      var dock=named(app,"compose-agent")
+      tryCompare(dock,"opened",true)
+      var field=named(dock,"agent-prompt-field")
+      tryCompare(field,"activeFocus",true)
+      var subject=named(compose,"compose-subject-field")
+      subject.forceActiveFocus()
+      tryCompare(app,"assistantEditing",false)
+      wait(0)
+      compare(subject.activeFocus,true)
+      compare(dock.opened,true)
+      dock.close()
     }
 
     function test_shell_close_flushes_and_restores_the_current_draft() {

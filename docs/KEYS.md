@@ -26,11 +26,11 @@ draft beats reading, a query being typed beats the list underneath it:
 
 ```qml
 readonly property string keyContext:
-    root.showPage  ? "page"
+    root.assistantEditing ? "assistant"
+  : root.showPage  ? "page"
   : root.composing ? "compose"
   : searchBar.fieldFocused ? "search"
   : root.calendarVisible ? "calendar"
-  : root.agentVisible ? "agent"
   : root.currentView === "reader" ? "reader"
   : "list"
 ```
@@ -41,9 +41,9 @@ readonly property string keyContext:
 | `reader` | A message open | The mailbox keys, plus reply/forward and zoom. `j`/`k` move the cursor; `o` or `Enter` opens what they landed on. With *Preview as the cursor moves* on, moving also shows the message, and it counts as read once the cursor has stayed on it |
 | `search` | A query being typed | `Escape`, and the modified keys |
 | `compose` | A draft being written | `Escape`, `Ctrl+Return`, and the modified keys |
+| `assistant` | Typing or reading in the AI dock | `Escape`, and the modified keys |
 | `page` | Setup or settings | `Escape`, and the modified keys |
 | `calendar` | The calendar month | Calendar navigation and the modified keys |
-| `agent` | The agent pane, an ask being typed | `Escape`, and the modified keys |
 
 `mail` in the table below is shorthand for `list` and `reader`; `all` is every
 context.
@@ -120,11 +120,10 @@ used to exist, and they had.
 | `goMailbox` | `Ctrl+1`, `Ctrl+2`, `Ctrl+3`, `Ctrl+4`, `Ctrl+5`, `Ctrl+6`, `Ctrl+7`, `Ctrl+8`, `Ctrl+9`, `Ctrl+0` | mail | Go to that mailbox |
 | `goAccount` | `Alt+1`, `Alt+2`, `Alt+3`, `Alt+4`, `Alt+5`, `Alt+6`, `Alt+7`, `Alt+8`, `Alt+9`, `Alt+0` | mail+calendar | Go to that email account |
 | `switchAccount` | `Alt+A` | mail | Switch account |
-| `askAgent` | `Alt+G` | mail | Ask the agent about the message |
+| `askAgent` | `Alt+G` | mail+compose | Ask AI about the message or draft |
 | `calendar` | `Alt+C` | mail+calendar | Switch between mail and calendar |
-| `mailView` | `Ctrl+Shift+M` | mail+calendar+agent | Go to mail |
-| `calendarView` | `Ctrl+Shift+C` | mail+calendar+agent | Go to calendar |
-| `agentView` | `Ctrl+Shift+G` | mail+calendar+agent | Go to the agent pane |
+| `mailView` | `Ctrl+Shift+M` | mail+calendar | Go to mail |
+| `calendarView` | `Ctrl+Shift+C` | mail+calendar | Go to calendar |
 | `toggleSidebar` | `[` | mail+calendar | Show or hide the sidebar |
 | `zoomIn` | `Ctrl++`, `Ctrl+=` | reader | Zoom the message body in |
 | `zoomOut` | `Ctrl+-` | reader | Zoom the message body out |
@@ -303,3 +302,5 @@ it changed no behaviour.
 **User-configurable bindings.** The table makes it possible — the rows are data
 — but nothing has asked for it, and a config file for bindings needs a merge
 story and a conflict story this does not need.
+
+The AI dock occupies the right side and reduces the mail/composer area. Its own text-entry context prevents mailbox keys from firing while asking AI. Clicking back into the draft restores its normal editing context. Escape closes the dock before leaving the underlying mail or draft, and restores the previous focus.

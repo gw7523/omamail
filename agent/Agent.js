@@ -7,9 +7,6 @@
 
 var ACTIVE = ["queued", "running"]
 
-function hasAgent(command) {
-  return String(command === undefined || command === null ? "" : command).trim() !== ""
-}
 
 // The runner's own listing, or nothing: a directory that is not there yet and
 // a line that is not JSON both mean "no jobs", not an error worth a notice.
@@ -117,12 +114,13 @@ function progressText(job) {
 function stallText(job) {
   if (!job || !isActive(job)) return ""
   if (String(job.stall || "") === "permission")
-    return "The agent stopped to ask for permission it cannot be given here. Cancel it and give the harness its tools up front — see the presets in Settings."
+    return "Continue in the system AI terminal."
   return ""
 }
 
 function stateLabel(job) {
   var glyph = glyphState(job)
+  if (job && job.resultReady) return "Ready"
   if (glyph === "running") return String(job.stall || "") === "permission" ? "Stopped to ask" : "Working"
   if (glyph === "question") return "Has a question"
   if (glyph === "done") return "Done"
@@ -148,7 +146,7 @@ function finishedNote(job) {
   if (glyph === "question") return "The agent has a question about " + about
   if (glyph === "done") return "The agent finished with " + about
   if (glyph === "failed") return "The agent failed on " + about
-  if (glyph === "cancelled") return "Agent actions on " + about + " were cancelled"
+  if (glyph === "cancelled") return "The AI session for " + about + " was closed"
   return ""
 }
 
@@ -206,7 +204,7 @@ function messageText(summary, bodyText) {
 
 // What crosses to the runner: one JSON object on one line. JSON escapes every
 // newline, so a body or a prompt of any shape is one line to `read`.
-function payload(summary, bodyText, account, folder, command, prompt, accountId) {
+function payload(summary, bodyText, account, folder, prompt, accountId) {
   var row = summary || {}
   return JSON.stringify({
     messageId: String(row.id || ""),
@@ -214,7 +212,6 @@ function payload(summary, bodyText, account, folder, command, prompt, accountId)
     account: String(account || ""),
     folder: String(folder || ""),
     subject: String(row.subject || ""),
-    command: String(command || ""),
     prompt: String(prompt || "").trim(),
     message: messageText(row, bodyText)
   })
@@ -231,102 +228,34 @@ function folderOf(messageId, mailboxKey, providerId) {
   return String(mailboxKey || "")
 }
 
-// ------------------------------------------------------------ the pane
-
-// A pane job is about a scope rather than a message: one account by address,
-// or every account. `scopeJobs` is what the pane lists, newest first as the
-// runner listed them.
-function isScopeJob(job) {
-  return !!job && String(job.messageId || "") === "" && String(job.scope || "") !== ""
-}
-
-
-function scopeOf(all, email) {
-  return all ? "all" : "account:" + String(email || "")
-}
-
-// What a pane card says it is about: the message's subject for a message
-// job, the mailbox or every mailbox for a scope job.
-function jobAboutLabel(job, accountLabel) {
-  if (!job) return ""
-  var many = Array.isArray(job.messageIds) ? job.messageIds.length : 0
-  if (many > 1) return pluralizeMessages(many)
-  if (String(job.messageId || "") !== "" || many === 1) {
-    var subject = String(job.subject || "").trim()
-    return subject === "" ? "A message" : "\u201C" + subject + "\u201D"
-  }
-  return scopeLabel(job.scope, accountLabel)
-}
-
 function pluralizeMessages(count) {
   var n = Math.max(0, Math.floor(Number(count) || 0))
   return n === 1 ? "1 message" : n + " messages"
-}
-
-function scopeLabel(scope, accountLabel) {
-  var value = String(scope || "")
-  if (value === "all") return "Every mailbox"
-  var name = String(accountLabel || "")
-  if (name !== "") return name
-  return value.indexOf("account:") === 0 ? value.slice("account:".length) : value
-}
-
-// What crosses to the runner for a pane job: no message, a scope, and every
-// address the agent may be asked to look in.
-function scopePayload(prompt, scope, account, accounts, command, accountId) {
-  var list = Array.isArray(accounts) ? accounts : []
-  var addresses = []
-  for (var i = 0; i < list.length; i++) {
-    var address = String(list[i] || "")
-    if (address !== "" && addresses.indexOf(address) < 0) addresses.push(address)
-  }
-  return JSON.stringify({
-    messageId: "",
-    scope: String(scope || ""),
-    accountId: String(accountId || ""),
-    account: String(account || ""),
-    accounts: addresses,
-    subject: "",
-    command: String(command || ""),
-    prompt: String(prompt || "").trim(),
-    message: ""
-  })
 }
 
 // A continuation: the answer to a job's question, or a follow-up ask. The
 // runner rebuilds the prompt from the parent, so only the parent id and the
 // new words cross — and the owner, which the runner inherits anyway, said
 // again here so the job file and the window agree on whose it is.
-function continuationPayload(parentJob, answer, command) {
-  return JSON.stringify({
-    parent: String(parentJob && parentJob.id ? parentJob.id : ""),
-    accountId: String(parentJob && parentJob.accountId ? parentJob.accountId : ""),
-    messageId: "",
-    scope: "",
-    subject: "",
-    command: String(command || ""),
-    prompt: String(answer || "").trim(),
-    message: ""
-  })
+function continuationPayload(parentJob, answer) {
+  return JSON.stringify({ parent: String(parentJob && parentJob.id || ""), prompt: String(answer || "").trim() })
 }
 
 // One job over several messages: each as the agent receives it, in list order.
-function selectionPayload(summaries, account, folder, command, prompt, accountId) {
+function selectionPayload(summaries, account, folder, prompt, accountId) {
   var rows = Array.isArray(summaries) ? summaries : []
   var messages = []
   for (var i = 0; i < rows.length; i++) {
     if (!rows[i] || String(rows[i].id || "") === "") continue
-    messages.push({ messageId: String(rows[i].id), message: messageText(rows[i], "") })
+    messages.push({ messageId: String(rows[i].id), message: messageText(rows[i], rows[i].bodyText || "") })
   }
   return JSON.stringify({
     messageId: "",
     messages: messages,
-    scope: "",
     accountId: String(accountId || ""),
     account: String(account || ""),
     folder: String(folder || ""),
     subject: pluralizeMessages(messages.length),
-    command: String(command || ""),
     prompt: String(prompt || "").trim(),
     message: ""
   })
@@ -340,87 +269,6 @@ function parseShown(text) {
   return { job: parsed.job, output: String(parsed.output || "") }
 }
 
-// ------------------------------------------------------------ presets
-
-// Command lines for the harnesses people actually run, each of which reads
-// the prompt on stdin and runs without a terminal to answer prompts on. The
-// tool flags are the ones that let the agent call himalaya without stopping
-// to ask; a preset is a starting point the field keeps editable, not a lock.
-// `binary` is what has to be on PATH for the preset to work, so Settings can
-// say which ones are installed.
-var PRESETS = [
-  { id: "claude", name: "Claude Code", binary: "claude",
-    command: "claude -p --allowedTools \"Bash(himalaya:*)\"",
-    note: "Non-interactive print mode; himalaya is the only tool allowed without asking." },
-  { id: "codex", name: "Codex", binary: "codex",
-    command: "codex exec --full-auto",
-    note: "Reads the prompt on stdin. Codex's sandbox may block network; use --sandbox danger-full-access if himalaya cannot reach the server." },
-  { id: "gemini", name: "Gemini CLI", binary: "gemini",
-    command: "gemini --yolo -p \"Act on the instructions above.\"",
-    note: "Headless mode; the -p text is appended to the prompt on stdin, and --yolo approves tool calls." },
-  { id: "grok", name: "Grok Build", binary: "grok",
-    command: "grok --always-approve -p \"$(cat)\"",
-    note: "Single-turn headless mode; --always-approve lets it run himalaya without asking. The shell reads the prompt on stdin into the argument." },
-  { id: "opencode", name: "OpenCode", binary: "opencode",
-    command: "opencode run \"$(cat)\"",
-    note: "Takes the prompt as an argument, so the shell reads stdin into it." },
-  { id: "custom", name: "Custom command", binary: "",
-    command: "",
-    note: "Anything that reads a prompt on stdin and writes its answer on stdout." }
-]
-
-function presets() { return PRESETS.slice() }
-
-function presetById(id) {
-  for (var i = 0; i < PRESETS.length; i++) if (PRESETS[i].id === String(id || "")) return PRESETS[i]
-  return null
-}
-
-// Which preset a command line is, or "custom" for one nobody shipped. Matched
-// on the exact text, so an edited preset is honestly reported as custom.
-function presetFor(command) {
-  var text = String(command || "").trim()
-  if (text === "") return ""
-  for (var i = 0; i < PRESETS.length; i++) {
-    if (PRESETS[i].command !== "" && PRESETS[i].command === text) return PRESETS[i].id
-  }
-  return "custom"
-}
-
-// The preset list as a dropdown wants it, with the binaries found on PATH
-// deciding the label. `found` is the list of binary names present.
-function presetOptions(found) {
-  var present = Array.isArray(found) ? found : []
-  var out = []
-  for (var i = 0; i < PRESETS.length; i++) {
-    var preset = PRESETS[i]
-    var label = preset.name
-    if (preset.binary !== "" && present.indexOf(preset.binary) < 0) label += " (not installed)"
-    out.push({ value: preset.id, label: label })
-  }
-  return out
-}
-
-// The names on PATH, from one line per name as `command -v` prints them.
-function foundBinaries(text) {
-  var lines = String(text || "").split("\n")
-  var out = []
-  for (var i = 0; i < lines.length; i++) {
-    var name = lines[i].trim()
-    if (name === "") continue
-    var slash = name.lastIndexOf("/")
-    if (slash >= 0) name = name.slice(slash + 1)
-    if (out.indexOf(name) < 0) out.push(name)
-  }
-  return out
-}
-
-function presetBinaries() {
-  var out = []
-  for (var i = 0; i < PRESETS.length; i++) if (PRESETS[i].binary !== "") out.push(PRESETS[i].binary)
-  return out
-}
-
 // ------------------------------------------------------------ attention
 
 // A job that wants the owner: it asked a question, or it finished and nobody
@@ -432,7 +280,7 @@ function wantsAttention(job, seen) {
   var looked = Array.isArray(seen) ? seen : []
   if (looked.indexOf(String(job.id)) >= 0) return false
   var glyph = glyphState(job)
-  return glyph === "question" || glyph === "done" || glyph === "failed"
+  return !!job.resultReady || glyph === "question" || glyph === "done" || glyph === "failed"
 }
 
 function anyAttention(jobs, seen) {
@@ -460,20 +308,21 @@ function markSeen(seen, jobId) {
 
 // A job about the draft being written: the fields as the composer has them
 // and the ask. No message, no scope; the answer is text for the draft.
-function draftPayload(fields, ask, account, command, accountId) {
+function draftPayload(fields, ask, account, accountId) {
   var values = fields || {}
   return JSON.stringify({
     messageId: "",
-    scope: "",
     accountId: String(accountId || ""),
+    draftKey: String(values.draftKey || ""),
+    draftFingerprint: draftFingerprint(values),
     draft: {
+      from: String(values.from || account || ""),
       to: String(values.to || ""),
       subject: String(values.subject || ""),
       body: String(values.body || "")
     },
     account: String(account || ""),
     subject: String(values.subject || "").trim() === "" ? "Draft" : "Draft: " + String(values.subject).trim(),
-    command: String(command || ""),
     prompt: String(ask || "").trim(),
     message: ""
   })
@@ -486,16 +335,15 @@ function isDraftJob(job) {
 // The composer's own jobs, newest first — what its pane shows.
 // The open account's draft jobs, newest first: a draft is written from one
 // account, and an answer for Ada's draft must not be offered to Bob's.
-function draftJobs(jobs, accountId) {
+function draftJobs(jobs, accountId, draftKey) {
   var list = Array.isArray(jobs) ? jobs : []
   var out = []
-  for (var i = 0; i < list.length; i++) if (isDraftJob(list[i]) && ownedBy(list[i], accountId)) out.push(list[i])
+  for (var i = 0; i < list.length; i++) if (isDraftJob(list[i]) && ownedBy(list[i], accountId) && String(draftKey || "") !== "" && String(list[i].draftKey || "") === String(draftKey)) out.push(list[i])
   out.sort(function(a, b) { return Number(b.created || 0) - Number(a.created || 0) })
   return out
 }
 
-// The quick asks the composer offers. Each is a whole prompt, so what the
-// agent is told is exactly what the button says.
+// Draft scenarios fill the editable prompt before the owner submits it.
 var DRAFT_ASKS = [
   { id: "review", label: "Review", prompt: "Review this draft: is it clear, complete and right in tone for its recipient? Answer with your review, not a rewrite." },
   { id: "rewrite", label: "Rewrite", prompt: "Rewrite this draft so it reads clearly and naturally, keeping every fact and the owner's voice." },
@@ -508,13 +356,49 @@ var DRAFT_ASKS = [
 
 function draftAsks() { return DRAFT_ASKS.slice() }
 
-// What a draft job's answer is once it has one: the output minus a trailing
-// QUESTION line, trimmed, and "" while the job runs or if it failed.
+// Explicit plaintext results are preserved exactly; incomplete or failed jobs
+// cannot supply draft text. A ready result can arrive before the terminal exits.
 function draftAnswer(job, output) {
-  if (!job || isActive(job) || glyphState(job) === "failed") return ""
-  var text = String(output || "").replace(/\r\n/g, "\n")
-  var lines = text.split("\n")
-  while (lines.length > 0 && lines[lines.length - 1].trim() === "") lines.pop()
-  if (lines.length > 0 && lines[lines.length - 1].indexOf("QUESTION:") === 0) lines.pop()
-  return lines.join("\n").trim()
+  if (!job || (isActive(job) && !job.resultReady) || glyphState(job) === "failed" || job.question) return ""
+  return String(output || "")
+}
+
+// A change indicator, never an authorization check. Ownership is draftKey + account.
+function draftFingerprint(fields) {
+  var v = fields || {}
+  var text = JSON.stringify([v.from || "", v.to || "", v.subject || "", v.body || ""])
+  var hash = 2166136261
+  for (var i = 0; i < text.length; i++) { hash ^= text.charCodeAt(i); hash = (hash * 16777619) >>> 0 }
+  return String(hash)
+}
+
+function selectionJob(jobs, ids, accountId) {
+  var wanted = (Array.isArray(ids) ? ids.slice() : []).sort()
+  if (wanted.length < 2) return null
+  var newest = null
+  var list = Array.isArray(jobs) ? jobs : []
+  for (var i = 0; i < list.length; i++) {
+    var job = list[i]
+    if (!ownedBy(job, accountId)) continue
+    var actual = messageIdsOf(job).sort()
+    if (JSON.stringify(actual) !== JSON.stringify(wanted)) continue
+    if (isActive(job)) return job
+    if (!newest || Number(job.created || 0) > Number(newest.created || 0)) newest = job
+  }
+  return newest
+}
+
+// Choosing a scenario fills the editable request; only Ask starts a session.
+var MAIL_ASKS = [
+  {label: "Summarize", prompt: "Summarize this mail and highlight its key points."},
+  {label: "Explain", prompt: "Explain this mail in plain language, including any unfamiliar terms."},
+  {label: "Action items", prompt: "List the requested actions, deadlines, and open questions in this mail."},
+  {label: "Draft a reply", prompt: "Draft a reply to this mail. Flag any missing information instead of inventing facts."},
+  {label: "Translate to Chinese", prompt: "Translate this mail into Chinese, preserving its meaning and structure."},
+  {label: "Translate to English", prompt: "Translate this mail into English, preserving its meaning and structure."}
+]
+function mailAsks(multiple) {
+  var asks = MAIL_ASKS.slice()
+  if (multiple) asks.unshift({label: "Compare mails", prompt: "Compare these mails, summarize what changed, and list shared action items and unresolved questions."})
+  return asks
 }

@@ -89,12 +89,16 @@ DropArea {
 
   // What the agent is handed, and how its answer lands. Replacing the body
   // counts as an edit — it is one — so the signature is not placed over it.
+  property string draftKey: newDraftKey()
+  function newDraftKey() { return Date.now().toString(36) + "-" + Math.random().toString(36).slice(2) }
   function currentFields() {
-    return ({ to: toField.text, subject: subjectField.text, body: bodyEdit.text })
+    return ({ to: toField.text, subject: subjectField.text, body: bodyEdit.text,
+      from: fromEmail, accountId: accountId, draftId: sourceDraftId, draftKey: draftKey })
   }
 
   function replaceBody(text) {
-    bodyEdit.text = String(text || "")
+    bodyEdit.remove(0, bodyEdit.length)
+    bodyEdit.insert(0, String(text || ""))
     bodyWasEdited = true
     bodyEdit.cursorPosition = bodyEdit.length
     noteDraftChanged()
@@ -185,6 +189,7 @@ DropArea {
   }
 
   function clearCurrentDraft(forgetAttachments) {
+    draftKey = newDraftKey()
     forwardLoadSerial++
     fromMenu.close()
     // Both of these live in the window overlay, and this view is hidden rather
@@ -246,6 +251,7 @@ DropArea {
 
   function snapshotDraft() {
     return ({
+      draftKey: draftKey,
       to: toField.text,
       cc: ccField.text,
       bcc: bccField.text,
@@ -272,6 +278,7 @@ DropArea {
 
   function restoreDraft(draft) {
     var saved = draft || ({})
+    draftKey = String(saved.draftKey || newDraftKey())
     mode = String(saved.mode || "new")
     accountId = String(saved.accountId || "")
     sourceDraftId = String(saved.sourceDraftId || "")
@@ -1856,7 +1863,7 @@ DropArea {
         anchors.verticalCenter: parent.verticalCenter
         visible: !!root.service && root.service.hasAgent
         iconName: "agent"
-        tooltipText: "Ask the agent about this draft"
+        tooltipText: "Ask AI..."
         foreground: root.agentWorking ? root.accentColor : root.dimColor
         hoverColor: root.textColor
         fontFamily: root.panelFontFamily

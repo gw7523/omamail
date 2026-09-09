@@ -1,56 +1,80 @@
-# The message agent
+# AI beside your mail
 
-How a message is handed to an agent, where that agent runs, how the window knows what it is doing, and how it is stopped. Written before the code, and kept true by it.
+Omamail uses the default AI already selected in Omarchy. There is no Omamail
+AI configuration, command preset, or separate agent page. An older saved
+`agentCommand` setting is ignored.
 
-## What it is
+Choose **Ask AI...** from a message's right-click menu or its AI button.
+`Alt+G` opens the same assistance from the list, reader, or composer. If the
+clicked message belongs to the current selection, the request covers that
+selection; otherwise it covers just that message. Select at most 20 messages
+from one mailbox per request.
 
-Settings names a **default agent**: a command line that reads a prompt on stdin and writes its answer on stdout — `claude -p`, `grok`, `codex exec`, a script. Nothing here knows which one it is. With no command set there is no agent button anywhere, by the same rule that hides Archive on a server with no archive: a button that cannot act is worse than none.
+The editable prompt offers common scenarios: summary, explanation, action items,
+reply drafting, and translation. Drafts offer review, rewrite, shortening, tone
+changes, and writing from notes. Selecting one fills the prompt without starting
+AI. Edit it freely, then use **Ask AI...** beside the prompt or press Return.
+The × button closes the dock. Copy and draft insertion actions stay below the result.
 
-A message gains an agent button, in the reader's action bar and in the row's hover lane. It opens a popup — a `QQC.Popup` in the window, not a second window — with one field: what to ask about this message. Submitting starts a job and closes the popup. Closing the popup without submitting starts nothing. Once a job exists for a message, the same button reopens the popup on that job: what it is doing, what it said, and a **Cancel actions** control. Closing that popup does not cancel. Only Cancel actions does.
+The dock keeps the request visible while Omamail reads the message bodies and
+opens the system AI terminal. Startup and reading errors appear in that right-side dock,
+so a failed request can be retried without typing it again. If no system default
+exists, Omarchy's own picker opens; choose an AI there, then retry the request.
+The picker does not carry the request forward itself.
 
-## Where the job runs
+AI reads the supplied mail or draft and writes its answer back into the right-side dock.
+You can select and copy the full plain-text result. In the composer, **Insert at
+cursor** and **Replace body** apply it explicitly; neither sends mail. Changes
+remain text edits that can be undone. Replacement removes the old body and
+inserts the new one, so undoing it can take two text undo steps. Results belong
+to both the account and the particular draft, including a draft restored after
+Undo send. A notice identifies a draft edited since the AI request.
 
-Not inside the shell. The window is a plugin in the process that draws the whole desktop, and a long-running child of it dies with `omarchy restart shell`, blocks nothing but is killed by everything. So a job is a transient **systemd user unit**: `systemd-run --user --unit omamail-agent-<id> --collect scripts/agent-job.py <jobdir>`. It survives the shell, the window and the session's other restarts; its output is in the journal; and stopping it is `systemctl --user stop omamail-agent-<id>`, which is the whole of Cancel actions. This is what Omarchy uses for its own background work, so it is the native answer rather than a daemon of this plugin's own.
+Continue a conversation in the system AI terminal. AI can revise its saved
+suggestion while that terminal remains open, and Omamail polls for the result.
+The breathing attention indicator remains until the result has been viewed.
 
-The job directory is `$XDG_STATE_HOME/omamail/agent/<id>/`, mode 0700, and holds:
+## The bridge
 
-- `job.json` — what was asked: the message id, the account address, the folder, the prompt, the agent command, and the timestamps. The runner rewrites it as the job moves: `state` is `queued`, `running`, `done`, `failed` or `cancelled`; `summary` is the last non-empty line the agent wrote; `question` is set when the agent's last line begins `QUESTION:`.
-- `message.txt` — the message as the window had it: the headers a reader would want, then the text body. Written by the window, never by the agent.
-- `prompt.txt` — what the agent is handed on stdin: the rules, the message, the ask.
-- `output.log` — everything the agent wrote.
+`AgentContext.qml` obtains actual message bodies through the owning provider's
+normal message-read interface. Reading for AI does not change the selected
+message or mark mail read. No mailbox command-line client or credentials are
+handed to AI. `Agent.js` builds the contextual payload and matches results to
+accounts, messages and drafts; `AgentRunner.qml` starts and polls the bridge.
 
-Everything a stranger wrote goes into files. Nothing from a message, a prompt or a job reaches a command line. The agent command itself is the user's own and runs through `sh -c`; it is not sender-controlled.
+`scripts/agent-job.py` accepts a bounded JSON line on stdin, stores it privately
+under `$XDG_STATE_HOME/omamail/assistant/<session-id>/context.json`, and launches
+an interactive session with `omarchy-launch-tui`. Inside that terminal,
+`omarchy-agent --inline` selects the system's configured AI and its launch flags.
+The command line contains fixed instructions only. Mail, addresses, draft text,
+and the user's request do not enter process arguments.
 
-## Mail I/O
+The AI is instructed to write its answer atomically to `response.txt` as private
+UTF-8 plain text. The bridge imports only a regular, single-link, owner-private
+file within 64 KiB; symbolic links, special files, invalid UTF-8 and unsupported
+control characters are refused. Job directories are 0700 and files are 0600.
+Input is limited to 1 MiB, with at most four active sessions and 32 retained
+sessions. The oldest completed sessions are removed to make room. Legacy agent
+jobs in the old `agent` directory are neither executed nor imported.
 
-The agent reads and writes mail through **himalaya**, not through this plugin. The prompt tells it which account it is standing in by address (`himalaya account list` names them), which folder, and the rule set from the mailbox skill: list before reading, read one message, never dump a mailbox, never send unless the ask says to send, never print a credential or a token. The plugin gives it the message it was asked about so the first read costs nothing; every further read, search, move or send is himalaya's.
+The bridge gives terminal startup 30 seconds and its interactive wrapper one
+hour. **Close session** stops that terminal interaction and its process group.
+It cannot stop tools that detached into their own session or work already
+submitted to an external daemon; those may continue. Closing the right-side dock alone
+keeps the AI session running.
 
-## How the window knows
+This bridge is not a sandbox for the system AI. It retains the same permissions
+and provider configuration as a normal Omarchy AI session. Instructions to treat
+mail as untrusted data and avoid mailbox access are guidance, not a technical
+restriction on the AI's tools. Supplied content may be sent to the AI provider
+configured in the system. Omamail never automatically applies generated text or
+sends a message because of an AI result.
 
-`agent/AgentRunner.qml` owns the jobs the window can see. It reads every `job.json` under the state directory on open and again every few seconds while any job is not finished — a poll rather than a watch, because a directory of small files rewritten by another process is exactly the case a file watcher reports late or twice, and a two-second poll while something is running costs nothing measurable. `agent/Agent.js` holds every decision: what a job file means, which job a message has, what the row and the popup say for each state, and how a job id and a unit name are derived. That is where the tests are.
+## Verification
 
-A row whose message has a job shows the agent glyph in its action lane with the state — running, a question waiting, done, failed — and the reader's button holds a selected style while the popup is up. A job finishing writes one status-line note, the same way an action does.
-
-## The pane
-
-Beside a message's own button there is a pane — the third root of the window after mail and the calendar, reached from the rail's foot or `Ctrl+Shift+G`. It takes an ask about the open mailbox or every mailbox: find the messages about X between two dates, find the last message from someone about something and draft a reply from what another thread says. No message crosses; the job carries a **scope** (`account:<address>` or `all`) and every address the agent may look in, and the agent does its own listing, searching and reading through himalaya. The pane lists these jobs newest first, and the open one shows the tail of what the agent wrote, re-read every two seconds while it runs (`agent-job.py show`). Cancel actions is the same `systemctl --user stop`.
-
-## Presets
-
-Settings offers a harness list beside the command: Claude Code (`claude -p --allowedTools "Bash(himalaya:*)"`), Codex (`codex exec --full-auto`), Gemini CLI (`gemini --yolo -p …`), Grok Build (`grok --always-approve -p "$(cat)"`), OpenCode (`opencode run "$(cat)"`), and Custom. Choosing one writes its line into the field, which stays editable; an edited line reads back as Custom rather than pretending to be the preset. `Agent.PRESETS` is the list, and the service marks the ones whose binary is not on PATH. Every preset grants the agent its tools up front, because a job has no terminal to answer a permission prompt on — a harness that stops to ask never finishes.
-
-## How the surfaces meet
-
-Looked at as a whole, the agent has three surfaces — the message popup, the row glyph, the pane — and the seams between them were the problem. This is how they meet now.
-
-- **The pane is where every job lives.** Message jobs sit beside scope jobs under the message's subject, and a message job's full output is readable there. A row's glyph opens the pane on that message's card; the popup carries "Open in pane" for the same. The popup is for asking, the pane for reading.
-- **A question is answered where it is seen.** A job whose last line was `QUESTION:` shows a reply field in the popup and on its card. The answer starts a **continuation job**: `parent` names the job it continues, and the runner builds the prompt from the parent's prompt, what the parent's agent wrote, and the owner's answer, carrying the parent's message forward. No harness-specific resume flag; it works for every command line the same way.
-- **Movement is shown while it happens.** The runner's listing carries `progress` — the agent's last line — for every running job, so the popup, the card and the row's tooltip change as the agent works rather than only at the end.
-- **A permission stall is named.** A headless harness that stops to ask never exits. The runner watches the output while the job runs; a tail that looks like a prompt (`Allow…?`, `(y/n)`, `Do you want to…`) and stays still for twelve seconds marks the job `stall: permission`. The state stays running so Cancel actions still works, and the popup and card say what happened and what to do — give the harness its tools up front, which the presets do.
-- **A selection is one job.** With rows ticked, the reader's button, Alt+G and a ticked row's glyph open the popup titled with the count; the job carries `messages`, one file each, and `messageIds`, so every row it names shows the glyph. The prompt numbers the messages and the rules say how many there are.
-- **A job is its account's.** Every payload names the account that asked by the id the service gives it — `provider:address`, in `accountId` — and the runner writes it on the job and hands it down to continuations. A row matches a job only inside that account: an IMAP id is a UID and a folder, unique in one mailbox and no further, and an address alone does not tell two providers apart. The pane lists every job regardless; the row's glyph, its glow and its cancel read only the open account's.
-
-## Not here yet
-
-- A per-account himalaya account name. The pane hands over every address and the agent matches them against `himalaya account list`.
-- Streaming inside the popup beyond the last line. The pane shows the tail; the popup shows one line on purpose, because it is a place to ask, not to read. The address is enough for himalaya to be told which it is.
+`tests/test_agent_bridge.py` uses synthetic system helpers, real process argument
+inspection and a Linux pseudo-terminal. It checks private files, import bounds,
+launch failures, retention, cancellation identity and terminal input. The QML
+tests exercise mouse and Return submission, visible errors, full results,
+account/draft ownership, body loading and concurrent result reads. They do not
+call an AI provider or use real mailbox credentials.
