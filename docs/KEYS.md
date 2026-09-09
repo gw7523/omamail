@@ -26,7 +26,7 @@ draft beats reading, a query being typed beats the list underneath it:
 
 ```qml
 readonly property string keyContext:
-    root.assistantEditing ? "assistant"
+    root.assistantEditing ? (root.activeAssistant.commandsOpen ? "assistantCommands" : "assistant")
   : root.showPage  ? "page"
   : root.composing ? "compose"
   : searchBar.fieldFocused ? "search"
@@ -41,14 +41,38 @@ readonly property string keyContext:
 | `reader` | A message open | The mailbox keys, plus reply/forward and zoom. `j`/`k` move the cursor; `o` or `Enter` opens what they landed on. With *Preview as the cursor moves* on, moving also shows the message, and it counts as read once the cursor has stayed on it |
 | `search` | A query being typed | `Escape`, and the modified keys |
 | `compose` | A draft being written | `Escape`, `Ctrl+Return`, and the modified keys |
-| `assistant` | Typing or reading in the AI dock | `Escape`, and the modified keys |
+| `assistant` | Typing or reading in the AI dock | `Return`/`Enter` sends, `Escape`, and the modified keys |
+| `assistantCommands` | Choosing an AI slash command | `Up`, `Down`, `Return`, `Enter`, `Escape`, and the modified keys |
 | `page` | Setup or settings | `Escape`, and the modified keys |
 | `calendar` | The calendar month | Calendar navigation and the modified keys |
+
+While an AI request is running, Escape interrupts it and keeps the dock open;
+otherwise Escape closes the dock. An open command menu or history view is left first.
+
+The AI input uses `assistant`: Return/Enter sends and Shift+Return/Enter inserts
+a newline. Ctrl+Return/Enter also sends for compatibility.
+While `/` command candidates are visible, `assistantCommands` owns Up/Down and
+Return/Enter; choosing a command fills the input without sending it. Escape
+first dismisses those candidates, then closes the dock. Both contexts keep the
+keyboard in the AI text area.
+The `assistantSend` row's `sequenceContexts` restricts bare Return/Enter to
+`assistant`, so those keys choose a candidate in `assistantCommands` instead.
+Shift+Return/Enter remains ordinary text input in both contexts.
+
+Qt 6.11's native `TextArea` accepts `ShortcutOverride` for editing keys even
+after `Keys.onShortcutOverride` leaves the event unaccepted. This was measured
+with a focused text area and a window Down shortcut: the shortcut never fired.
+The AI text area therefore forwards its `Keys.onPressed` event unchanged to
+`KeyRouter.routeKeyEvent`. The router decodes the key and applies the same
+`Keymap.js` bindings and context as its window shortcuts. This is one router
+with two event entry points, not a second set of local bindings. An unbound
+event is left alone, preserving normal typing, IME input and line breaks.
 
 `mail` in the table below is shorthand for `list` and `reader`; `all` is every
 context.
 
-**A text-entry context binds no bare key but `Escape`.** That is the whole rule.
+**A text-entry context binds no bare key but `Escape`, except AI send and command
+selection described above.**
 There is no "is the user typing" question anywhere in the code, because there is
 nothing left for it to answer: if a bare letter is not bound in `compose`, it
 cannot fire there, and the field gets it the way any other character arrives.
@@ -121,6 +145,10 @@ used to exist, and they had.
 | `goAccount` | `Alt+1`, `Alt+2`, `Alt+3`, `Alt+4`, `Alt+5`, `Alt+6`, `Alt+7`, `Alt+8`, `Alt+9`, `Alt+0` | mail+calendar | Go to that email account |
 | `switchAccount` | `Alt+A` | mail | Switch account |
 | `askAgent` | `Alt+G` | mail+compose | Ask AI about the message or draft |
+| `assistantSend` | `Return`, `Enter`, `Ctrl+Return`, `Ctrl+Enter` | assistant+assistantCommands | Send the AI message |
+| `assistantCommandUp` | `Up` | assistantCommands | Previous AI command |
+| `assistantCommandDown` | `Down` | assistantCommands | Next AI command |
+| `assistantChooseCommand` | `Return`, `Enter` | assistantCommands | Fill the selected AI command |
 | `calendar` | `Alt+C` | mail+calendar | Switch between mail and calendar |
 | `mailView` | `Ctrl+Shift+M` | mail+calendar | Go to mail |
 | `calendarView` | `Ctrl+Shift+C` | mail+calendar | Go to calendar |

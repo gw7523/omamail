@@ -14,9 +14,18 @@ Item {
     property string agentError: ""
     property string agentShownId: ""
     property string agentShownOutput: ""
+    property var agentShownTranscript: []
+    property int agentRequests: 0
+    property string lastAgentPrompt: ""
+    function askAgentDraft(fields, prompt) { agentRequests++; lastAgentPrompt = prompt; return true }
     property var agentJobs: ({})
     property var agentAttentionByMessage: ({})
-    function agentJobsForDraft(fields) { return [] }
+    property var draftAgentJobs: []
+    property string cancelledAgentId: ""
+    function agentJobsForDraft(fields) { return draftAgentJobs }
+    function cancelAgentJob(id) { cancelledAgentId=id; return true }
+    function showAgentJob(id) { agentShownId=id }
+    function acknowledgeAgentJob(id) {}
     function agentJobWantsAttention(job) { return false }
     function agentJobFor(id, owner) { return null }
     function agentSelectionJob(ids, owner) { return null }
@@ -178,10 +187,18 @@ Item {
     }
 
     function init() {
+      var assistant = named(app, "compose-agent")
+      if (assistant) {
+        assistant.close()
+        named(assistant, "agent-prompt-field").text = ""
+      }
       app.opened = false
       app.loadComposeRecovery("")
       app.clearComposeRecovery()
       mailService.sendPending = false
+      mailService.draftAgentJobs = []; mailService.cancelledAgentId = ""
+      mailService.agentRequests = 0
+      mailService.lastAgentPrompt = ""
       mailService.sending = false
       mailService.lastSavedDraft = null
       mailService.failDraftSave = false
@@ -241,6 +258,94 @@ Item {
       compare(body.text,"Keep draft")
       compare(compose.width,originalWidth)
       tryCompare(body,"activeFocus",true)
+    }
+
+    function test_escape_interrupts_running_ai_and_keeps_chat_open() {
+      app.open("{}")
+      app.startCompose("new")
+      app.runShortcut("askAgent", "Alt+G")
+      var dock=named(app,"compose-agent")
+      mailService.draftAgentJobs=[{id:"running",state:"running",created:1}]
+      tryCompare(dock,"working",true)
+      var field=named(dock,"agent-prompt-field")
+      tryCompare(field,"activeFocus",true)
+      keyClick(Qt.Key_Escape)
+      compare(mailService.cancelledAgentId,"running")
+      compare(dock.opened,true)
+    }
+    function test_header_ai_toggle_and_multiline_send() {
+      app.open("{}")
+      app.startCompose("new")
+      var toggle = named(app, "header-ai-button")
+      verify(toggle)
+      verify(waitForRendering(toggle))
+      verify(toggle.x >= 0 && toggle.x + toggle.width <= toggle.parent.width)
+      mouseClick(toggle, toggle.width / 2, toggle.height / 2)
+      var dock = named(app, "compose-agent")
+      tryCompare(dock, "opened", true)
+      var field = named(dock, "agent-prompt-field")
+      tryCompare(field, "activeFocus", true)
+      field.text = "First line"
+      field.cursorPosition = field.length
+      keyClick(Qt.Key_Return, Qt.ShiftModifier)
+      compare(field.text, "First line\n")
+      keyClick(Qt.Key_X)
+      compare(mailService.agentRequests, 0)
+      keyClick(Qt.Key_Return)
+      compare(mailService.agentRequests, 1)
+      compare(mailService.lastAgentPrompt, "First line\nx")
+      keyClick(Qt.Key_Enter)
+      compare(mailService.agentRequests, 2)
+      keyClick(Qt.Key_Enter, Qt.ControlModifier)
+      compare(mailService.agentRequests, 3)
+      compare(app.composing, true)
+      mouseClick(toggle, toggle.width / 2, toggle.height / 2)
+      tryCompare(dock, "opened", false)
+    }
+
+    function test_ai_command_keys_fill_without_sending_and_escape_in_order() {
+      app.open("{}")
+      app.startCompose("new")
+      app.runShortcut("askAgent", "Alt+G")
+      var dock = named(app, "compose-agent")
+      var field = named(dock, "agent-prompt-field")
+      tryCompare(field, "activeFocus", true)
+      field.text = "/"
+      field.cursorPosition = field.length
+      tryCompare(dock, "commandsOpen", true)
+      tryCompare(named(app, "key-router"), "context", "assistantCommands")
+      wait(0)
+      keyClick(Qt.Key_Down)
+      compare(dock.commandIndex, 1, "Down must route to command selection")
+      keyClick(Qt.Key_Up)
+      compare(dock.commandIndex, 0, "Up must route to command selection")
+      keyClick(Qt.Key_Return)
+      tryCompare(dock, "commandsOpen", false)
+      verify(field.text.length > 1)
+      verify(field.text.indexOf("/") !== 0)
+      compare(mailService.agentRequests, 0)
+      compare(field.activeFocus, true)
+      field.text = "/"
+      field.cursorPosition = field.length
+      tryCompare(dock, "commandsOpen", true)
+      keyClick(Qt.Key_Enter, Qt.ShiftModifier)
+      compare(field.text, "/\n")
+      compare(mailService.agentRequests, 0)
+      field.text = "/r"
+      tryCompare(dock, "commandsOpen", true)
+      keyClick(Qt.Key_Enter)
+      tryCompare(dock, "commandsOpen", false)
+      verify(field.text.indexOf("/") !== 0)
+      compare(mailService.agentRequests, 0)
+      field.text = "/"
+      tryCompare(dock, "commandsOpen", true)
+      wait(0)
+      keyClick(Qt.Key_Escape)
+      tryCompare(dock, "commandsOpen", false)
+      compare(dock.opened, true)
+      keyClick(Qt.Key_Escape)
+      tryCompare(dock, "opened", false)
+      compare(app.composing, true)
     }
 
     function test_ai_dock_allows_returning_to_draft_fields() {

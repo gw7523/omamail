@@ -13,7 +13,7 @@
 // follows it — a context that is not text entry parks the focus rather than
 // leaving it wherever the last click put it. Keeping those two as separate
 // things is what let a dismissed compose field go on eating j and k.
-var CONTEXTS = ["list", "reader", "search", "compose", "page", "calendar", "assistant"]
+var CONTEXTS = ["list", "reader", "search", "compose", "page", "calendar", "assistant", "assistantCommands"]
 
 // Shorthands, so a row says where it lives rather than restating the set.
 var MAIL = ["list", "reader"]
@@ -168,6 +168,15 @@ var BINDINGS = [
   // account switcher: opened through the table, then answering its own keys.
   { id: "askAgent", keys: ["Alt+G"], contexts: ["list", "reader", "compose"],
     group: "Acting", label: "Ask AI about the message or draft" },
+  { id: "assistantSend", keys: ["Return", "Enter", "Ctrl+Return", "Ctrl+Enter"], contexts: ["assistant", "assistantCommands"],
+    sequenceContexts: { "Return": ["assistant"], "Enter": ["assistant"] },
+    group: "AI", label: "Send the AI message" },
+  { id: "assistantCommandUp", keys: ["Up"], contexts: ["assistantCommands"],
+    group: "AI", label: "Previous AI command" },
+  { id: "assistantCommandDown", keys: ["Down"], contexts: ["assistantCommands"],
+    group: "AI", label: "Next AI command" },
+  { id: "assistantChooseCommand", keys: ["Return", "Enter"], contexts: ["assistantCommands"],
+    group: "AI", label: "Fill the selected AI command" },
 
   { id: "calendar", keys: ["Alt+C"], contexts: ["list", "reader", "calendar"],
     group: "Going", label: "Switch between mail and calendar" },
@@ -207,7 +216,7 @@ var BINDINGS = [
 // the toast offers Alt+Z and its button.
 function contextFor(state) {
   var value = state || ({})
-  if (value.assistantEditing) return "assistant"
+  if (value.assistantEditing) return value.assistantCommands ? "assistantCommands" : "assistant"
   if (value.showPage) return "page"
   if (value.composing) return "compose"
   if (value.searchFocused) return "search"

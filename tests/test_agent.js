@@ -23,7 +23,7 @@ assert.equal(a.stateLabel({state:'running',resultReady:true}),'Ready')
 assert.equal(a.detailText({state:'failed',error:'No terminal'}),'No terminal')
 assert.deepEqual(copy(a.newlyFinished(jobs,[{...jobs[0],state:'done'}])).map(j=>j.id),['r'])
 assert.deepEqual(copy(a.parseJobs('bad')),[])
-assert.deepEqual(copy(a.parseShown('{"job":{"id":"r"},"output":"<b>plain</b>"}')),{job:{id:'r'},output:'<b>plain</b>'})
+assert.deepEqual(copy(a.parseShown('{"job":{"id":"r"},"output":"<b>plain</b>"}')),{job:{id:'r'},output:'<b>plain</b>',transcript:[]})
 const summary = {id:'42:INBOX',subject:'Invoice',from:{email:'x@example.com'},to:[{email:'ada@example.com'}]}
 const payload = JSON.parse(a.payload(summary,'日本語\n$() "quotes"', 'ada@example.com','INBOX','Summarize',A))
 assert.equal(payload.accountId,A)
@@ -57,3 +57,31 @@ console.log('test_agent.js ok')
 assert.equal(a.draftAnswer({state:'done'},'Full text\nQUESTION: ordinary mail text\n'),'Full text\nQUESTION: ordinary mail text\n')
 assert.equal(a.selectionJob(jobs,['42:INBOX','43:INBOX'],A),null)
 assert.equal(a.selectionJob(jobs,['43:INBOX','42:INBOX'],B).id,'b')
+
+assert.deepEqual(copy(a.chatEntries([{role:'user',text:'Question'},{role:'assistant',text:'<b>Plain</b>'},{role:'status',text:'Reading context'},{role:'thinking',text:'hidden'},{role:'user',text:17}])),[{role:'user',text:'Question'},{role:'assistant',text:'<b>Plain</b>'},{role:'status',text:'Reading context'}])
+
+const sameSecond=[{id:'old',accountId:A,messageId:'m',state:'done',created:10,createdOrder:10000000001},{id:'new',accountId:A,messageId:'m',state:'done',created:10,createdOrder:10000000002}]
+assert.equal(a.jobFor(sameSecond,'m',A).id,'new')
+assert.equal(a.jobsByMessage(sameSecond,A).m.id,'new')
+
+assert.equal(a.selectionJob([{id:'multi',accountId:A,messageIds:['m','n'],state:'done'}],['m'],A),null)
+assert.equal(a.commandSuggestions('/trans',a.mailAsks(false)).items.length,2)
+assert.equal(a.commandSuggestions('A question /trans',a.mailAsks(false)).items.length,0)
+assert.ok(a.commandSuggestions('First line\n/rewrite',a.draftAsks()).items[0].prompt.includes('mail title and body'))
+const formatTurns=[{role:'user',text:a.MAIL_TRANSFORM_FORMAT}]
+assert.equal(a.draftAnswer({state:'done'},'Title: New title\n\nBody:\nNew body',formatTurns),'New body')
+assert.equal(a.draftAnswer({state:'done'},'Unstructured response',formatTurns),'')
+
+const history=[
+ {id:'a1',conversationId:'a1',accountId:A,messageIds:['m'],created:1},
+ {id:'a2',conversationId:'a1',accountId:A,messageIds:['m'],created:3},
+ {id:'b1',accountId:A,messageIds:['m'],created:2},
+ {id:'other',accountId:B,messageIds:['m'],created:4},
+ {id:'multi',accountId:A,messageIds:['m','n'],created:5}
+]
+assert.deepEqual(copy(a.historyFor(history,A,['m'],'')).map(j=>j.id),['a2','b1'])
+assert.deepEqual(copy(a.historyFor(history,A,['n','m'],'')).map(j=>j.id),['multi'])
+assert.deepEqual(copy(a.historyFor(drafts,A,[],'draft1')).map(j=>j.id),['d1'])
+
+assert.equal(a.workingText({state:'running',created:100},2580000,0),'• Working (41m 20s • Esc to interrupt • / show commands)')
+assert.equal(a.workingText(null,3500,1000),'• Preparing (0m 2s • / show commands)')

@@ -99,7 +99,24 @@ Item {
 
   function agentJobFor(messageId, accountId) {
     var target = agentTarget(messageId, accountId)
-    return target.owner ? agentRunner.jobFor(target.id, target.owner.accountId) : null
+    return target.owner ? Agent.selectionJob(agentRunner.jobs, [target.id], target.owner.accountId) : null
+  }
+
+  function agentHistoryFor(fields, ids, accountId) {
+    if (fields && fields.draftKey) {
+      var sender = sendHostFor(fields)
+      return sender ? Agent.historyFor(agentRunner.jobs, sender.accountId, [], fields.draftKey) : []
+    }
+    if (!ids || !ids.length) return []
+    var target = agentTarget(ids[0], accountId)
+    if (!target.owner) return []
+    var own = []
+    for (var i = 0; i < ids.length; i++) {
+      var item = agentTarget(ids[i], accountId)
+      if (item.owner !== target.owner) return []
+      own.push(item.id)
+    }
+    return Agent.historyFor(agentRunner.jobs, target.owner.accountId, own, "")
   }
 
   function agentSelectionJob(ids, accountId) {
@@ -148,6 +165,7 @@ Item {
   readonly property var agentAllJobs: agentRunner.jobs
   readonly property string agentShownId: agentRunner.shownId
   readonly property string agentShownOutput: agentRunner.shownOutput
+  readonly property var agentShownTranscript: agentRunner.shownTranscript
 
   function showAgentJob(jobId) { agentRunner.show(jobId) }
 
@@ -156,9 +174,10 @@ Item {
   function answerAgent(jobId, answer) {
     if (!hasAgent) return false
     var job = agentRunner.jobFor2(jobId)
-    if (!job || String(answer || "").trim() === "") return false
+    if (!job || !job.canContinue || Agent.isActive(job) || !findAccount(job.accountId)
+        || String(answer || "").trim() === "") return false
+    agentContext.error = ""
     if (!agentRunner.start(Agent.continuationPayload(job, answer))) return false
-    if (current) current.note("Answered the agent")
     return true
   }
 

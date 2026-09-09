@@ -1856,25 +1856,6 @@ DropArea {
         onClicked: root.chooseFiles()
       }
 
-      // The agent, beside the draft: only where one is set, lit while its
-      // card is up, pulsing when an answer or a question is waiting.
-      IconButton {
-        objectName: "compose-agent-button"
-        anchors.verticalCenter: parent.verticalCenter
-        visible: !!root.service && root.service.hasAgent
-        iconName: "agent"
-        tooltipText: "Ask AI..."
-        foreground: root.agentWorking ? root.accentColor : root.dimColor
-        hoverColor: root.textColor
-        fontFamily: root.panelFontFamily
-        selected: root.agentOpen
-        attention: root.agentAttention
-        onClicked: {
-          var scene = mapToGlobal(0, 0)
-          root.agentRequested(scene.x, scene.y)
-        }
-      }
-
       Button {
         text: "Discard"
         foreground: root.dimColor

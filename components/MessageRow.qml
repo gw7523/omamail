@@ -278,32 +278,7 @@ Rectangle {
     anchors.rightMargin: Style.space(6)
     anchors.verticalCenter: parent.verticalCenter
     spacing: Style.space(1)
-    visible: root.hot || root.summary.starred || root.selectionMode || root.agentState !== ""
-
-    // The agent's glyph: a question waiting is the one state that asks for
-    // the eye, so it is the urgent colour; running is the accent; the rest
-    // are quiet. Clicking opens the popup on this message.
-    IconButton {
-      objectName: "row-agent"
-      visible: root.agentState !== ""
-      iconName: "agent"
-      tooltipText: root.agentState === "running"
-        ? (root.agentProgress !== "" ? root.agentProgress : "The agent is working on this")
-        : root.agentState === "question" ? "The agent has a question"
-        : root.agentState === "failed" ? "The agent failed on this"
-        : root.agentState === "cancelled" ? "Agent actions were cancelled" : "The agent finished with this"
-      foreground: root.agentState === "question" ? root.urgentColor
-        : (root.agentState === "running" ? root.accentColor : root.dimColor)
-      hoverColor: root.textColor
-      iconSize: Style.font.iconSmall
-      size: Style.space(24)
-      fontFamily: root.panelFontFamily
-      attention: root.agentAttention
-      onClicked: {
-        var scene = mapToGlobal(0, height)
-        root.agentRequested(scene.x, scene.y)
-      }
-    }
+    visible: root.hot || root.summary.starred || root.selectionMode
 
     IconButton {
       visible: !root.selectionMode

@@ -56,7 +56,7 @@ function jobFor(jobs, messageId, accountId) {
     if (!ownedBy(list[i], accountId)) continue
     if (messageIdsOf(list[i]).indexOf(id) < 0) continue
     if (isActive(list[i])) return list[i]
-    if (!newest || Number(list[i].created || 0) > Number(newest.created || 0)) newest = list[i]
+    if (!newest || createdOrder(list[i]) > createdOrder(newest)) newest = list[i]
   }
   return newest
 }
@@ -84,7 +84,7 @@ function jobsByMessage(jobs, accountId) {
       var id = ids[k]
       var current = out[id]
       if (!current || isActive(list[i])
-          || (!isActive(current) && Number(list[i].created || 0) > Number(current.created || 0)))
+          || (!isActive(current) && createdOrder(list[i]) > createdOrder(current)))
         out[id] = list[i]
     }
   }
@@ -105,6 +105,15 @@ function glyphState(job) {
 
 // What the agent last wrote while it works, or "" — the listing carries it
 // for a running job, so a row and a popup can show movement.
+function workingText(job, now, preparationStarted) {
+  var active = isActive(job)
+  var start = active && Number(job.created) > 0 ? Number(job.created) * 1000 : preparationStarted
+  var seconds = Math.max(0, Math.floor((now - start) / 1000))
+  var duration = Math.floor(seconds / 60) + "m " + (seconds % 60) + "s"
+  return "• " + (active ? "Working" : "Preparing") + " (" + duration
+    + (active ? " • Esc to interrupt" : "") + " • / show commands)"
+}
+
 function progressText(job) {
   if (!job || !isActive(job)) return ""
   return String(job.progress || "").trim()
@@ -266,7 +275,7 @@ function parseShown(text) {
   var parsed = null
   try { parsed = JSON.parse(String(text || "")) } catch (e) { parsed = null }
   if (!parsed || typeof parsed !== "object" || !parsed.job) return null
-  return { job: parsed.job, output: String(parsed.output || "") }
+  return { job: parsed.job, output: String(parsed.output || ""), transcript: chatEntries(parsed.transcript) }
 }
 
 // ------------------------------------------------------------ attention
@@ -339,7 +348,7 @@ function draftJobs(jobs, accountId, draftKey) {
   var list = Array.isArray(jobs) ? jobs : []
   var out = []
   for (var i = 0; i < list.length; i++) if (isDraftJob(list[i]) && ownedBy(list[i], accountId) && String(draftKey || "") !== "" && String(list[i].draftKey || "") === String(draftKey)) out.push(list[i])
-  out.sort(function(a, b) { return Number(b.created || 0) - Number(a.created || 0) })
+  out.sort(function(a, b) { return createdOrder(b) - createdOrder(a) })
   return out
 }
 
@@ -354,13 +363,31 @@ var DRAFT_ASKS = [
   { id: "notes", label: "From notes", prompt: "The body is notes. Write the email they describe, to this recipient, in the owner's voice." }
 ]
 
-function draftAsks() { return DRAFT_ASKS.slice() }
+var MAIL_TRANSFORM_FORMAT = "Use exactly this reply layout: Title: <mail title>, then a blank line, then Body: on its own line followed by the mail body. Do not include any other headers or commentary."
+function draftAsks() {
+  var out = []
+  for (var i = 0; i < DRAFT_ASKS.length; i++) {
+    var ask = DRAFT_ASKS[i]
+    var prompt = ask.prompt + " Work only on the mail title and body; do not rewrite addresses, dates, metadata, or this instruction."
+    if (ask.id !== "review") prompt = prompt.replace("Answer with your review, not a rewrite.", "") + " " + MAIL_TRANSFORM_FORMAT
+    out.push({id: ask.id, label: ask.label, prompt: prompt})
+  }
+  return out
+}
 
 // Explicit plaintext results are preserved exactly; incomplete or failed jobs
 // cannot supply draft text. A ready result can arrive before the terminal exits.
-function draftAnswer(job, output) {
+function draftAnswer(job, output, transcript) {
   if (!job || (isActive(job) && !job.resultReady) || glyphState(job) === "failed" || job.question) return ""
-  return String(output || "")
+  var text = String(output || "")
+  var rows = Array.isArray(transcript) ? transcript : []
+  for (var i = 0; i < rows.length; i++) {
+    if (rows[i].role === "user" && rows[i].text.indexOf(MAIL_TRANSFORM_FORMAT) >= 0) {
+      var body = /^Title: [^\r\n]*\r?\n\r?\nBody:\r?\n([\s\S]*)$/.exec(text)
+      return body ? body[1] : ""
+    }
+  }
+  return text
 }
 
 // A change indicator, never an authorization check. Ownership is draftKey + account.
@@ -374,7 +401,7 @@ function draftFingerprint(fields) {
 
 function selectionJob(jobs, ids, accountId) {
   var wanted = (Array.isArray(ids) ? ids.slice() : []).sort()
-  if (wanted.length < 2) return null
+  if (wanted.length === 0) return null
   var newest = null
   var list = Array.isArray(jobs) ? jobs : []
   for (var i = 0; i < list.length; i++) {
@@ -383,7 +410,7 @@ function selectionJob(jobs, ids, accountId) {
     var actual = messageIdsOf(job).sort()
     if (JSON.stringify(actual) !== JSON.stringify(wanted)) continue
     if (isActive(job)) return job
-    if (!newest || Number(job.created || 0) > Number(newest.created || 0)) newest = job
+    if (!newest || createdOrder(job) > createdOrder(newest)) newest = job
   }
   return newest
 }
@@ -394,11 +421,67 @@ var MAIL_ASKS = [
   {label: "Explain", prompt: "Explain this mail in plain language, including any unfamiliar terms."},
   {label: "Action items", prompt: "List the requested actions, deadlines, and open questions in this mail."},
   {label: "Draft a reply", prompt: "Draft a reply to this mail. Flag any missing information instead of inventing facts."},
-  {label: "Translate to Chinese", prompt: "Translate this mail into Chinese, preserving its meaning and structure."},
-  {label: "Translate to English", prompt: "Translate this mail into English, preserving its meaning and structure."}
+  {label: "Translate to Chinese", prompt: "Translate only the mail title and body into Chinese. Exclude sender, recipients, dates, metadata, and instructions."},
+  {label: "Translate to English", prompt: "Translate only the mail title and body into English. Exclude sender, recipients, dates, metadata, and instructions."}
 ]
 function mailAsks(multiple) {
-  var asks = MAIL_ASKS.slice()
+  var asks = []
+  for (var i = 0; i < MAIL_ASKS.length; i++) {
+    var ask = MAIL_ASKS[i]
+    asks.push({label: ask.label, prompt: ask.prompt + " Work only from the mail title and body."
+      + (ask.label.indexOf("Translate") === 0 ? " " + MAIL_TRANSFORM_FORMAT : "")})
+  }
+  asks.push({id: "rewrite", label: "Rewrite", prompt: "Rewrite only the mail title and body for clarity, preserving facts. Exclude addresses, dates, metadata and instructions. " + MAIL_TRANSFORM_FORMAT})
   if (multiple) asks.unshift({label: "Compare mails", prompt: "Compare these mails, summarize what changed, and list shared action items and unresolved questions."})
   return asks
+}
+
+function chatEntries(value) {
+  var rows = Array.isArray(value) ? value : []
+  var out = []
+  for (var i = 0; i < rows.length; i++) {
+    var entry = rows[i]
+    if (!entry || ["user", "assistant", "status"].indexOf(entry.role) < 0 || typeof entry.text !== "string") continue
+    out.push({role: entry.role, text: entry.text})
+  }
+  return out
+}
+
+function createdOrder(job) {
+  return Number(job && job.createdOrder || Number(job && job.created || 0) * 1000000000)
+}
+
+function commandSuggestions(text, choices) {
+  var value = String(text || "")
+  var match = /(?:^|\n)\/([a-z-]*)$/.exec(value)
+  if (!match) return {start: -1, items: []}
+  var items = []
+  for (var i = 0; i < choices.length; i++) {
+    var choice = choices[i]
+    var command = String(choice.id || choice.label.toLowerCase().replace(/ /g, "-"))
+    if (command.indexOf(match[1]) === 0 || choice.label.toLowerCase().indexOf(match[1]) === 0)
+      items.push({command: command, label: choice.label, prompt: choice.prompt})
+  }
+  return {start: value.lastIndexOf("/"), items: items}
+}
+
+function historyFor(jobs, accountId, ids, draftKey) {
+  var rows = Array.isArray(jobs) ? jobs : []
+  var wanted = (Array.isArray(ids) ? ids.slice() : []).sort().join("\u001f")
+  var groups = {}
+  for (var i = 0; i < rows.length; i++) {
+    var job = rows[i]
+    if (!ownedBy(job, accountId)) continue
+    if (draftKey) { if (!isDraftJob(job) || job.draftKey !== draftKey) continue }
+    else if (isDraftJob(job) || messageIdsOf(job).sort().join("\u001f") !== wanted || wanted === "") continue
+    var key = String(job.conversationId || job.id)
+    if (!groups[key] || createdOrder(job) > createdOrder(groups[key])) groups[key] = job
+  }
+  var result = []
+  for (var key in groups) if (Object.prototype.hasOwnProperty.call(groups, key)) result.push(groups[key])
+  result.sort(function(a,b) { return createdOrder(b) - createdOrder(a) })
+  return result
+}
+function historyLabel(job) {
+  return new Date(Number(job.created || 0) * 1000).toLocaleString() + " · " + String(job.requestPreview || job.subject || "Conversation")
 }

@@ -853,25 +853,6 @@ Item {
           foreground: root.dimColor; hoverColor: root.textColor; fontFamily: root.panelFontFamily
           onClicked: root.actionRequested("trash")
         }
-        // System AI is reachable here even before a default has been selected.
-        // Lit while its popup is up, like every trigger, and lit in the accent
-        // while a job is running so the reader says so without being asked.
-        IconButton {
-          id: agentButton
-          objectName: "reader-agent-button"
-          x: trashButton.x + trashButton.width + messageActions.gap
-          y: Math.round((parent.height - height) / 2)
-          visible: !!root.service && root.service.hasAgent
-          iconName: "agent"; tooltipText: "Ask AI... · Alt+G"
-          foreground: root.agentWorking ? root.accentColor : root.dimColor
-          hoverColor: root.textColor; fontFamily: root.panelFontFamily
-          selected: root.agentOpen
-          attention: root.agentAttention
-          onClicked: {
-            var scene = mapToGlobal(0, 0)
-            root.agentRequested(scene.x, scene.y)
-          }
-        }
 
       }
 

@@ -1,80 +1,89 @@
 # AI beside your mail
 
-Omamail uses the default AI already selected in Omarchy. There is no Omamail
-AI configuration, command preset, or separate agent page. An older saved
-`agentCommand` setting is ignored.
+Omamail reads the default AI selected in Omarchy. There is no Omamail AI settings
+page or separate Agent page. The background adapter currently supports Claude;
+other defaults produce an inline explanation without opening a terminal or picker.
+The installed Claude CLI uses its normal system login and provider configuration.
 
-Choose **Ask AI...** from a message's right-click menu or its AI button.
-`Alt+G` opens the same assistance from the list, reader, or composer. If the
-clicked message belongs to the current selection, the request covers that
-selection; otherwise it covers just that message. Select at most 20 messages
-from one mailbox per request.
+Choose the outline **AI icon** button beside Compose in the window header, the
+message menu, or `Alt+G` in the list, reader or composer. The right dock displays
+the conversation, aligned to the bottom with older turns above. User messages
+have a background and a › marker; AI replies have no background and each offers
+a ghost copy icon that copies the original reply. Bold and code are formatted
+through an escaping formatter that cannot create links or remote resources. Execution status appears just above the input, which starts at one line and
+grows with newlines.
+Type `/` to show commands, then use Up/Down and Return or click a suggestion.
+Selecting a command only fills editable instructions. **Enter** sends;
+**Shift+Enter** inserts a newline. Ctrl+Enter also sends. While running, the
+stop icon ends the request. The **…** menu contains **New chat** and **History...**
+for the current mail or draft. The header AI button closes the dock without stopping an active request.
+While running, a timed Working line stays above the input and Escape interrupts
+the request; when idle, Escape closes the dock.
 
-The editable prompt offers common scenarios: summary, explanation, action items,
-reply drafting, and translation. Drafts offer review, rewrite, shortening, tone
-changes, and writing from notes. Selecting one fills the prompt without starting
-AI. Edit it freely, then use **Ask AI...** beside the prompt or press Return.
-The × button closes the dock. Copy and draft insertion actions stay below the result.
+The worker runs silently in the background. Text appears progressively, along
+with public status events such as reading a file or finishing a tool. Raw tool
+arguments/results, diagnostics, and internal reasoning are not displayed.
+Completed requests can be followed up in the same native Claude conversation.
+The **New chat** action reads the current mail or draft into a fresh conversation.
+Follow-ups keep the original context; a notice identifies a draft edited since
+that context was captured.
 
-The dock keeps the request visible while Omamail reads the message bodies and
-opens the system AI terminal. Startup and reading errors appear in that right-side dock,
-so a failed request can be retried without typing it again. If no system default
-exists, Omarchy's own picker opens; choose an AI there, then retry the request.
-The picker does not carry the request forward itself.
+A request can cover at most 20 messages from one mailbox. The owning provider's
+normal read interface supplies complete bodies without selecting or marking mail
+read. Results stay bound to their account, messages and draft identity. You can
+select history text or copy each answer. Translation and rewriting commands act
+only on mail titles and bodies, excluding addresses and metadata. Their results
+separate Title and Body; draft insertion takes only the Body section, so a
+translated title is not accidentally inserted into the body. In a draft, **Insert at cursor**
+and **Replace body** apply only a completed successful reply; neither sends mail.
+Replacement is two text edits and can require two undo steps. The mail list has no AI icon. The breathing
+attention indicator on the header AI button remains until the result is viewed.
 
-AI reads the supplied mail or draft and writes its answer back into the right-side dock.
-You can select and copy the full plain-text result. In the composer, **Insert at
-cursor** and **Replace body** apply it explicitly; neither sends mail. Changes
-remain text edits that can be undone. Replacement removes the old body and
-inserts the new one, so undoing it can take two text undo steps. Results belong
-to both the account and the particular draft, including a draft restored after
-Undo send. A notice identifies a draft edited since the AI request.
+## Background bridge
 
-Continue a conversation in the system AI terminal. AI can revise its saved
-suggestion while that terminal remains open, and Omamail polls for the result.
-The breathing attention indicator remains until the result has been viewed.
+`AgentContext.qml` loads bodies; `Agent.js` builds context and matches identity.
+`AgentRunner.qml` starts a Python worker and polls validated display snapshots.
+`scripts/agent-job.py` reads requests on stdin and launches the installed Claude
+CLI with non-interactive streaming JSON output. Mail and questions reach Claude
+through stdin, never process arguments. No terminal launcher is invoked.
 
-## The bridge
+Each turn has a private 0700 directory under
+`$XDG_STATE_HOME/omamail/assistant/<turn-id>/`; files are 0600. The parser imports
+only bounded, validated UTF-8 public text/status events. It rejects malformed or
+incomplete streams and never treats a partial response as a successful draft
+suggestion. Per-turn answers are limited to 64 KiB; conversation snapshots have
+bounded entries and bytes. Oversized history requires a new chat instead of
+silently dropping context. At most four requests run and 32 turns are retained.
+Retention deletes only validated directory basenames.
 
-`AgentContext.qml` obtains actual message bodies through the owning provider's
-normal message-read interface. Reading for AI does not change the selected
-message or mark mail read. No mailbox command-line client or credentials are
-handed to AI. `Agent.js` builds the contextual payload and matches results to
-accounts, messages and drafts; `AgentRunner.qml` starts and polls the bridge.
+A follow-up accepts only the parent turn ID and the new question. Account,
+message and draft identity cannot be overridden. A successful native session is
+resumed with a fork, so branching from retained turns does not mix histories.
+Continuation stays on the parent's provider even if the system default changes.
+Old terminal-based jobs cannot be continued; start a new chat for them.
 
-`scripts/agent-job.py` accepts a bounded JSON line on stdin, stores it privately
-under `$XDG_STATE_HOME/omamail/assistant/<session-id>/context.json`, and launches
-an interactive session with `omarchy-launch-tui`. Inside that terminal,
-`omarchy-agent --inline` selects the system's configured AI and its launch flags.
-The command line contains fixed instructions only. Mail, addresses, draft text,
-and the user's request do not enter process arguments.
+Claude runs with non-interactive `dontAsk` permissions: no hidden approval prompt
+can leave the panel waiting for input in another window. Permission or login
+failures appear in the panel. Omamail does not copy the interactive launcher's
+auto-approval flags. Existing system configuration and tool permissions still
+apply; this bridge is not a sandbox. Treating mail as untrusted context is an AI
+instruction, not a technical restriction on its tools. Supplied content goes to
+the provider configured for the system AI.
 
-The AI is instructed to write its answer atomically to `response.txt` as private
-UTF-8 plain text. The bridge imports only a regular, single-link, owner-private
-file within 64 KiB; symbolic links, special files, invalid UTF-8 and unsupported
-control characters are refused. Job directories are 0700 and files are 0600.
-Input is limited to 1 MiB, with at most four active sessions and 32 retained
-sessions. The oldest completed sessions are removed to make room. Legacy agent
-jobs in the old `agent` directory are neither executed nor imported.
-
-The bridge gives terminal startup 30 seconds and its interactive wrapper one
-hour. **Close session** stops that terminal interaction and its process group.
-It cannot stop tools that detached into their own session or work already
-submitted to an external daemon; those may continue. Closing the right-side dock alone
-keeps the AI session running.
-
-This bridge is not a sandbox for the system AI. It retains the same permissions
-and provider configuration as a normal Omarchy AI session. Instructions to treat
-mail as untrusted data and avoid mailbox access are guidance, not a technical
-restriction on the AI's tools. Supplied content may be sent to the AI provider
-configured in the system. Omamail never automatically applies generated text or
-sends a message because of an AI result.
+Cancellation and the request deadline stop the worker's child process group.
+Tools that detached or submitted work to an existing daemon may continue. Raw
+stderr is discarded rather than displayed or persisted, to avoid leaking tool
+or login diagnostics. Omamail never automatically sends a message or applies AI
+text.
 
 ## Verification
 
-`tests/test_agent_bridge.py` uses synthetic system helpers, real process argument
-inspection and a Linux pseudo-terminal. It checks private files, import bounds,
-launch failures, retention, cancellation identity and terminal input. The QML
-tests exercise mouse and Return submission, visible errors, full results,
-account/draft ownership, body loading and concurrent result reads. They do not
-call an AI provider or use real mailbox credentials.
+Backend tests use synthetic Claude streams and inspect actual process arguments,
+stdin and child lifetime. They cover progressive output, native continuation,
+absence of terminal launch, failure/limits, safe retention and ownership. QML
+tests cover Enter/Shift+Enter submission, history selection while streaming, scroll,
+errors, draft insertion and account/context ownership. Native previews verify
+the current Omarchy theme and compact dock layout.
+
+A real installed-Claude smoke check also passed two synthetic turns: the second
+turn recalled a word supplied in the first. No real mailbox content was used.

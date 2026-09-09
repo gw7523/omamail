@@ -205,6 +205,7 @@ Item {
   // sidebar collapsed to a strip, and a single column that swaps list for
   // reader.
   readonly property bool assistantOpen: agentPrompt.opened || composeAgent.opened
+  readonly property var activeAssistant: composeAgent.opened ? composeAgent : (agentPrompt.opened ? agentPrompt : null)
   readonly property real assistantWidth: assistantOpen ? Math.min(Style.space(420), window.width * 0.45) : 0
   property bool assistantEditing: false
   readonly property real mailWidth: window.width - assistantWidth
@@ -1145,6 +1146,10 @@ Item {
   // row there and a case here, and nothing else. The sequence says which key of
   // a row fired, for the rows that bind more than one meaning.
   function runShortcut(id, sequence) {
+    if (id === "assistantSend") return activeAssistant ? activeAssistant.submitCurrent() : false
+    if (id === "assistantCommandUp") return activeAssistant ? activeAssistant.moveCommand(-1) : false
+    if (id === "assistantCommandDown") return activeAssistant ? activeAssistant.moveCommand(1) : false
+    if (id === "assistantChooseCommand") return activeAssistant ? activeAssistant.chooseCommand() : false
     // The sheet is on top, so moving moves it. It is a plain overlay rather
     // than a popup, which is why its keys can come from here at all — the
     // switcher's cannot, and answers them itself.
@@ -1248,6 +1253,9 @@ Item {
   // purpose: a QQC.Popup with CloseOnEscape consumes the key itself, so a
   // branch for them here would never run. Everything else is the history.
   function goBack() {
+    if (activeAssistant && activeAssistant.commandsOpen) { activeAssistant.dismissCommands(); return }
+    if (activeAssistant && activeAssistant.historyMode) { activeAssistant.historyMode = false; activeAssistant.takeFocus(); return }
+    if (activeAssistant && activeAssistant.interrupt()) return
     if (composeAgent.opened) { composeAgent.close(); return }
     if (agentPrompt.opened) { agentPrompt.close(); return }
     // A query being typed is the nearest thing to leave: clear it if there is
@@ -1652,6 +1660,7 @@ Item {
 
       readonly property string keyContext: Keymap.contextFor(({
         assistantEditing: root.assistantOpen && root.assistantEditing,
+        assistantCommands: !!root.activeAssistant && root.activeAssistant.commandsOpen,
         showPage: root.showPage,
         composing: root.composing,
         searchFocused: searchBar.fieldFocused,
@@ -1675,7 +1684,7 @@ Item {
         return false
       }
       function applyContextFocus() {
-        if (keyContext === "assistant") {
+        if (keyContext === "assistant" || keyContext === "assistantCommands") {
           if (composeAgent.opened && !composeAgent.activeFocus) composeAgent.takeFocus()
           else if (agentPrompt.opened && !agentPrompt.activeFocus) agentPrompt.takeFocus()
         }
@@ -1706,7 +1715,6 @@ Item {
 
       Item {
         id: header
-        anchors.rightMargin: root.assistantWidth
         anchors.top: parent.top
         anchors.left: parent.left
         anchors.right: parent.right
@@ -1859,6 +1867,7 @@ Item {
           }
 
           Button {
+            id: headerComposeButton
             objectName: "compose-button"
             anchors.verticalCenter: parent.verticalCenter
             visible: !root.showPage && !root.composing && !root.calendarVisible
@@ -1873,6 +1882,56 @@ Item {
             onClicked: root.startCompose("new")
           }
 
+          Button {
+            id: headerAgentButton
+            parent: root.composing ? composeAiSlot : headerRight
+            anchors.right: root.composing ? parent.right : undefined
+            objectName: "header-ai-button"
+            anchors.verticalCenter: parent.verticalCenter
+            visible: !root.showPage && !root.calendarVisible && root.overlay !== "eventComposer"
+            width: headerComposeButton.implicitHeight
+            height: headerComposeButton.implicitHeight
+            Accessible.name: "AI"
+            tooltipText: "AI... · Alt+G"
+            ActionIcon {
+              anchors.centerIn: parent
+              // The antenna makes the robot visually bottom-heavy.
+              anchors.verticalCenterOffset: -Style.space(1)
+              name: "agent"
+              iconSize: Style.font.icon
+              color: headerAgentButton.foreground
+              fontFamily: root.fontFamily
+            }
+            foreground: root.assistantOpen ? root.foreground : root.dim
+            bordered: true
+            selected: root.assistantOpen
+            focusable: true
+            accent: root.accent
+            fontFamily: root.fontFamily
+            fontSize: Style.font.caption
+            enabled: root.ready && (root.assistantOpen || compose.opened || root.selectionActive
+              || root.cursorId !== "" || (!!root.service && root.service.selectedId !== ""))
+            onClicked: {
+              if (root.assistantOpen) { agentPrompt.close(); composeAgent.close() }
+              else root.runShortcut("askAgent", "Alt+G")
+            }
+            Rectangle {
+              id: aiAttentionHalo
+              anchors.fill: parent
+              anchors.margins: -1
+              color: "transparent"
+              border.width: Style.normalBorderWidth
+              border.color: root.accent
+              visible: !!root.service && !!root.service.agentAttention && !root.assistantOpen
+              SequentialAnimation on opacity {
+                running: aiAttentionHalo.visible
+                loops: Animation.Infinite
+                NumberAnimation { from: 0.15; to: 1; duration: 900; easing.type: Easing.InOutSine }
+                NumberAnimation { from: 1; to: 0.15; duration: 900; easing.type: Easing.InOutSine }
+              }
+            }
+          }
+
         }
 
         PanelSeparator {
@@ -1880,6 +1939,19 @@ Item {
           width: parent.width
           foreground: root.foreground
         }
+      }
+
+      // The same global AI control stays at the window's top-right when the
+      // composer's own header replaces the mailbox header.
+      Item {
+        id: composeAiSlot
+        anchors.top: parent.top
+        anchors.right: parent.right
+        anchors.rightMargin: Style.space(14)
+        height: Style.space(44)
+        width: headerAgentButton.width
+        visible: root.composing
+        z: 30
       }
 
       // -------------------------------------------------------------- body
@@ -2740,7 +2812,7 @@ Item {
         id: assistantDock
         objectName: "assistant-dock"
         anchors.right: parent.right
-        anchors.top: parent.top
+        anchors.top: root.composing ? composeAiSlot.bottom : header.bottom
         anchors.bottom: statusBar.top
         width: root.assistantWidth
         visible: root.assistantOpen
@@ -2758,6 +2830,7 @@ Item {
           popupBorderColor: root.popupBorder
           panelFontFamily: root.fontFamily
           onFocusRequested: { root.assistantEditing = true; Qt.callLater(focusScope.applyContextFocus) }
+          onKeyPressed: function(event) { keyRouter.routeKeyEvent(event) }
           onEditingChanged: function(editing) { root.assistantEditing = editing }
           onDismissed: { root.assistantEditing = false; Qt.callLater(focusScope.applyContextFocus) }
         }
@@ -2777,6 +2850,7 @@ Item {
           popupBorderColor: root.popupBorder
           panelFontFamily: root.fontFamily
           onFocusRequested: { root.assistantEditing = true; Qt.callLater(focusScope.applyContextFocus) }
+          onKeyPressed: function(event) { keyRouter.routeKeyEvent(event) }
           onEditingChanged: function(editing) { root.assistantEditing = editing }
           onDismissed: { root.assistantEditing = false; Qt.callLater(focusScope.applyContextFocus) }
         }
@@ -2959,6 +3033,8 @@ Item {
       // ---------------------------------------------------------- keyboard
 
       KeyRouter {
+        id: keyRouter
+        objectName: "key-router"
         context: focusScope.keyContext
         overlay: root.shortcutHelpVisible
         onTriggered: function(id, sequence) { root.runShortcut(id, sequence) }

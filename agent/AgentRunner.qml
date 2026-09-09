@@ -4,7 +4,7 @@ import Quickshell.Io
 import "Agent.js" as Agent
 
 // The jobs the window can see, and the two things it can do to them: start
-// one, close one. Each job runs in a system AI terminal through
+// one, close one. Each turn runs in a background system AI process through
 // `scripts/agent-job.py` and may outlive the dock — see docs/AGENT.md.
 //
 // A poll rather than a watch: a directory of small files rewritten by another
@@ -51,6 +51,7 @@ Item {
   // runner last returned. Re-read on every poll while that job is running.
   property string shownId: ""
   property string shownOutput: ""
+  property var shownTranscript: []
 
   function runner() { return pluginDir + "/scripts/agent-job.py" }
 
@@ -70,7 +71,7 @@ Item {
   }
 
   // One line of JSON on stdin — `Agent.payload` — and the runner makes the
-  // directory and the terminal session. The listing follows straight away, so the row
+  // directory and the background request. The listing follows straight away, so the row
   // shows the job before the poll would have found it.
   function start(payloadLine) {
     if (pluginDir === "") { lastError = "Omamail could not locate its AI helper. Reload the plugin."; return false }
@@ -108,6 +109,7 @@ Item {
     if (id !== shownId) {
       shownId = id
       shownOutput = ""
+      shownTranscript = []
     }
     if (pluginDir === "" || id === "") return
     if (shower.running) { showQueued = true; return }
@@ -214,13 +216,16 @@ Item {
     stderr: StdioCollector { waitForEnd: true }
     onExited: function(exitCode) {
       var shown = exitCode === 0 ? Agent.parseShown(String(stdout.text || "")) : null
-      if (shown && String(shown.job.id || "") === root.shownId) root.shownOutput = shown.output
+      if (shown && String(shown.job.id || "") === root.shownId) {
+        root.shownOutput = shown.output
+        if (JSON.stringify(root.shownTranscript) !== JSON.stringify(shown.transcript)) root.shownTranscript = shown.transcript
+      }
       if (root.showQueued) { root.showQueued = false; root.show(root.shownId) }
     }
   }
 
   Timer {
-    interval: 2000
+    interval: 500
     repeat: true
     running: root.anyActive
     onTriggered: {
