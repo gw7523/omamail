@@ -1779,38 +1779,52 @@ function labelMoveTargets(labels, movingPath, delimiter) {
 // or gone with its parent — is dropped rather than polled forever. The
 // same array comes back when nothing changed, so a caller can tell.
 function migrateMonitoredIds(monitored, before, after, oldPath, newPath, delimiter) {
+  return migrateMonitoredChanges(monitored, [{ before: before, oldPath: oldPath,
+    newPath: newPath, delimiter: delimiter }], after)
+}
+
+// Apply every pending path change before consulting the final listing. An
+// intermediate name need never appear in that listing, and a surviving child
+// remains watched when its parent alone was deleted.
+function migrateMonitoredChanges(monitored, moves, after) {
   var ids = Array.isArray(monitored) ? monitored : []
-  var was = Array.isArray(before) ? before : []
   var now = Array.isArray(after) ? after : []
-  var sep = String(delimiter === undefined || delimiter === null ? "/" : delimiter)
-  var from = String(oldPath || "")
-  var to = String(newPath || "")
-  function pathOf(label) { return label ? String(label.name || label.rawName || "") : "" }
-  function byPath(list, path) {
-    for (var i = 0; i < list.length; i++) if (pathOf(list[i]) === path) return list[i]
-    return null
-  }
   var out = []
-  var changed = false
+  function pathOf(label) { return label ? String(label.name || label.rawName || "") : "" }
   for (var k = 0; k < ids.length; k++) {
     var id = String(ids[k] || "")
-    if (id === "") { changed = true; continue }
-    var still = indexById(now, id)
-    var old = indexById(was, id)
-    var path = old >= 0 ? pathOf(was[old]) : ""
-    var under = from !== "" && path !== "" && (path === from || (sep !== "" && path.indexOf(from + sep) === 0))
-    if (under && to !== "") {
-      var moved = byPath(now, to + path.slice(from.length))
-      if (moved && String(moved.id || "") !== "") {
-        if (String(moved.id) !== id) changed = true
-        if (out.indexOf(String(moved.id)) < 0) out.push(String(moved.id))
-        continue
+    if (id === "") continue
+    if (indexById(now, id) >= 0) { out.push(id); continue }
+    var path = ""
+    for (var m = 0; m < moves.length; m++) {
+      var move = moves[m]
+      var before = Array.isArray(move.before) ? move.before : []
+      if (path === "") {
+        var old = indexById(before, id)
+        if (old >= 0) path = pathOf(before[old])
+      }
+      var from = String(move.oldPath || "")
+      var to = String(move.newPath || "")
+      var sep = String(move.delimiter === undefined || move.delimiter === null ? "/" : move.delimiter)
+      if (from !== "" && path !== "" && (path === from || (sep !== "" && path.indexOf(from + sep) === 0))) {
+        if (to === "") { path = ""; break }
+        path = to + path.slice(from.length)
       }
     }
-    if (still >= 0 && !(under && to === "")) { out.push(id); continue }
-    changed = true
+    if (path === "") continue
+    for (var j = 0; j < now.length; j++) {
+      if (pathOf(now[j]) === path && String(now[j].id || "") !== "") {
+        if (out.indexOf(String(now[j].id)) < 0) out.push(String(now[j].id))
+        break
+      }
+    }
   }
-  return changed ? out : ids
+  if (out.length === ids.length) {
+    var same = true
+    for (var n = 0; n < ids.length; n++) if (out[n] !== ids[n]) same = false
+    if (same) return ids
+  }
+  return out
 }
 
 // "3 new in Receipts", or the two labels with the most, for the status line.

@@ -56,6 +56,7 @@ Item {
   property var special: ({})
   property bool foldersLoaded: false
   property bool foldersLoading: false
+  property int foldersGeneration: 0
   property var folderWaiters: []
 
   // What the server said it can do, asked for alongside the folder listing so
@@ -202,12 +203,20 @@ Item {
     }
     if (foldersLoading) return
     foldersLoading = true
+    var generation = foldersGeneration
 
     // No folder in the URL: both of these are asked of the server rather than
     // of a mailbox, and they share the one connection.
     run("", [Imap.capabilityCommand(), Imap.listCommand()], function(text, error) {
       root.foldersLoading = false
+      if (generation !== root.foldersGeneration) {
+        root.ensureFolders()
+        return
+      }
       if (!error) {
+        // This LIST is authoritative even when the last folder was deleted.
+        root.folders = Imap.parseList(text)
+        root.special = Imap.specialFolders(root.folders)
         root.adoptServerAnswer(text)
         root.foldersLoaded = true
       }
@@ -761,8 +770,18 @@ Item {
   }
 
   function changeFolders(commands, callback) {
+    // Check the complete batch before credentials or a transport are requested.
+    for (var i = 0; i < commands.length; i++) {
+      if (commands[i] === "") {
+        if (typeof callback === "function") callback(null, "This folder name cannot be sent safely")
+        return newHandle()
+      }
+    }
     return root.run("", commands, function(text, error) {
-      if (!error) root.foldersLoaded = false
+      if (!error) {
+        root.foldersGeneration++
+        root.foldersLoaded = false
+      }
       if (typeof callback === "function") callback(null, error)
     })
   }

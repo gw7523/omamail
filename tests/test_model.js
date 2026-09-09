@@ -1450,3 +1450,15 @@ assert.strictEqual(model.monitoredNote([]), "")
   deepEqual(model.migrateMonitoredIds(["Work", "Work/2026"], flatBefore, flatAfter, "Work", "Jobs", ""), ["Jobs", "Work/2026"])
   deepEqual(model.migrateMonitoredIds(null, before, after, "Work", "Jobs", "/"), [])
 }
+
+// A queued chain is resolved against the final list only.
+{
+  const old = [{id: "Work", name: "Work"}, {id: "Receipts", name: "Receipts"}]
+  const moves = [
+    {before: old, oldPath: "Work", newPath: "Jobs", delimiter: "/"},
+    {before: old, oldPath: "Receipts", newPath: "Bills", delimiter: "/"},
+    {before: [{id: "Jobs", name: "Jobs"}], oldPath: "Jobs", newPath: "Tasks", delimiter: "/"}
+  ]
+  deepEqual(model.migrateMonitoredChanges(["Work", "Receipts"], moves,
+    [{id: "Tasks", name: "Tasks"}, {id: "Bills", name: "Bills"}]), ["Tasks", "Bills"])
+}

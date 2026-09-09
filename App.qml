@@ -1541,6 +1541,7 @@ Item {
     })
   }
 
+
   function confirmDelete(request) {
     if (!service) return
     if (request.kind === "event" && request.event) {
@@ -1926,6 +1927,8 @@ Item {
           calendarSelected: root.calendarVisible
           agentSelected: root.agentVisible
           onAgentRequested: root.showAgent()
+          menuLabelPath: labelMenu.opened && !!root.service
+            && labelMenu.accountId === root.service.activeAccountId ? labelMenu.labelPath : ""
           service: root.service
           textColor: root.foreground
           accentColor: root.accent
