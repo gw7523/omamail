@@ -141,6 +141,7 @@ FocusScope {
         width: parent.width
         Text {
           width: parent.width - closeButton.width
+          anchors.verticalCenter: parent.verticalCenter
           textFormat: Text.PlainText
           text: root.composer ? "AI · " + (root.fields.subject || "Draft")
             : "AI · " + (root.subject || "Message")
@@ -150,21 +151,26 @@ FocusScope {
           font.bold: true
           elide: Text.ElideRight
         }
-        QQC.ToolButton {
+        Button {
           id: closeButton
           objectName: "agent-close-button"
-          implicitWidth: Style.spacing.controlHeight
-          implicitHeight: Style.spacing.controlHeight
+          width: Style.space(24)
+          height: Style.space(24)
+          bordered: true
+          focusable: true
+          horizontalPadding: 0
+          verticalPadding: 0
+          foreground: root.dimColor
+          accent: root.accentColor
+          fontFamily: root.panelFontFamily
+          tooltipText: "Close AI · Esc"
           Accessible.name: "Close AI"
-          QQC.ToolTip.visible: hovered
-          QQC.ToolTip.text: "Close AI · Esc"
-          contentItem: ActionIcon { name: "close"; color: root.dimColor; fontFamily: root.panelFontFamily }
-          background: Rectangle {
-            color: closeButton.hovered || closeButton.activeFocus
-              ? Style.hoverFillFor(root.textColor, root.accentColor)
-              : Style.normalFillFor(root.textColor, root.accentColor)
-            border.width: closeButton.activeFocus ? 1 : 0
-            border.color: root.accentColor
+          ActionIcon {
+            anchors.centerIn: parent
+            name: "close"
+            iconSize: Style.font.iconSmall
+            color: root.dimColor
+            fontFamily: root.panelFontFamily
           }
           onClicked: root.close()
         }
