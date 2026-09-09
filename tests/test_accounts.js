@@ -846,3 +846,13 @@ assert.strictEqual(frozen(accounts.replaceAt(cidActive, -1, account("x@example.c
     "and it is written to disk and read back")
 }
 
+
+// An HTML signature sits beside the plain one and survives its edits.
+{
+  const rich = accounts.setSignatureHtml(named, "me@gmail.com", " <p>Ada</p> ")
+  assert.strictEqual(rich.accounts[0].signatureHtml, "<p>Ada</p>")
+  assert.strictEqual(accounts.setSignature(rich, "me@gmail.com", "Ada").accounts[0].signatureHtml, "<p>Ada</p>")
+  assert.strictEqual(accounts.setSignatureHtml(rich, "me@gmail.com", "").accounts[0].signatureHtml, "")
+  assert.strictEqual(accounts.load(accounts.serialize(rich)).accounts[0].signatureHtml, "<p>Ada</p>")
+}
+

@@ -605,6 +605,11 @@ Item {
     if (next !== "" && next !== service.selectedId) openMember(next)
   }
 
+  function openOrEdit(id) {
+    if (service && service.mailboxKey === "drafts" && editDraft(id)) return true
+    return openMessage(id)
+  }
+
   function editDraft(id) {
     if (!service || service.mailboxKey !== "drafts") return false
     var draftId = String(id || "")
@@ -1101,7 +1106,10 @@ Item {
     }
     if (id === "cursorDown") return moveCursor(1)
     if (id === "cursorUp") return moveCursor(-1)
-    if (id === "open") return openMessage(cursorId)
+    // In Drafts, opening a draft from the keyboard is editing it: the
+    // message is what was being written. A click still previews, so the
+    // list can be read through without a composer opening on every row.
+    if (id === "open") return openOrEdit(cursorId)
     if (id === "backToList") return backToList()
     if (id === "nextMember") return stepMember(1)
     if (id === "previousMember") return stepMember(-1)
