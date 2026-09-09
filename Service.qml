@@ -45,8 +45,28 @@ Item {
 
   readonly property string pluginId: manifest && manifest.id
     ? String(manifest.id) : "omamail"
+  // Where this checkout is: the directory every script here is named against.
+  // The host says so in the manifest, but only to a plugin it hands the
+  // manifest itself to. A shell that passes a public copy strips the private
+  // fields, and Omarchy 4.0.3 does exactly that for everything that is not
+  // first-party, so `__sourceDir` arrives undefined and every command is built
+  // as "/scripts/..." — mail, the config store, the calendar and the keyring
+  // all fail to start, and a sign-in cannot keep its refresh token.
+  //
+  // The file's own URL answers the same question without asking the host
+  // anything: `Service.qml` is in the plugin's root, and a QML file always
+  // knows where it is. The manifest still wins when it carries the field, so a
+  // host that relocates a plugin is still obeyed.
+  readonly property string ownDir: {
+    var url = String(Qt.resolvedUrl("."))
+    if (url.indexOf("file://") !== 0) return ""
+    // A path with a space or a colon arrives percent-encoded in a URL.
+    var path = decodeURIComponent(url.substring("file://".length))
+    return path.length > 1 && path.charAt(path.length - 1) === "/"
+      ? path.substring(0, path.length - 1) : path
+  }
   readonly property string pluginDir: manifest && manifest.__sourceDir
-    ? String(manifest.__sourceDir) : ""
+    ? String(manifest.__sourceDir) : ownDir
   // Shown in the empty reader, so a screenshot in a bug report says which build
   // it came from. The shell's manifest validation requires both fields, so a
   // loaded plugin always has them; the fallbacks are for a harness that
