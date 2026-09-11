@@ -123,19 +123,38 @@ Item {
       compare(list.loadMoreIfAtFoot(), false)
     }
 
+    function test_a_failed_page_waits_for_manual_retry() {
+      flick.contentY = flick.contentHeight - flick.height
+      tryCompare(fakeService, "loads", 1, 1000)
+
+      // A failure ends the load without adding messages. Remaining at the
+      // foot must not turn that failure into an unbounded retry loop.
+      fakeService.listLoading = false
+      wait(60)
+      compare(fakeService.loads, 1)
+
+      var button = findByName(list, "load-more")
+      verify(button !== null)
+      button.clicked()
+      compare(fakeService.loads, 2, "the explicit retry remains available")
+    }
+
     function test_the_button_is_still_there_for_a_page_that_did_not_come() {
-      var button = null
-      function find(item) {
-        if (item.objectName === "load-more") return item
-        var kids = item.children || []
-        for (var i = 0; i < kids.length; i++) { var f = find(kids[i]); if (f) return f }
-        return null
-      }
-      button = find(list)
+      var button = findByName(list, "load-more")
       verify(button !== null)
       compare(button.visible, true)
       button.clicked()
       compare(fakeService.loads, 1)
+    }
+
+    function findByName(item, name) {
+      if (item.objectName === name) return item
+      var kids = item.children || []
+      for (var i = 0; i < kids.length; i++) {
+        var found = findByName(kids[i], name)
+        if (found) return found
+      }
+      return null
     }
   }
 }

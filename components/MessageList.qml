@@ -151,6 +151,7 @@ Column {
   // before that load has said it is running, and a page asked for from
   // inside the load would race it.
   property var scroller: null
+  property int loadStartCount: -1
 
   function loadMoreIfAtFoot() {
     if (!root.scroller || !root.service) return false
@@ -168,6 +169,15 @@ Column {
 
   Connections {
     target: root.service
-    function onListLoadingChanged() { if (!root.service.listLoading) root.loadMoreSoon() }
+    function onListLoadingChanged() {
+      if (root.service.listLoading) {
+        root.loadStartCount = root.service.messages.length
+        return
+      }
+      var grew = root.loadStartCount >= 0
+        && root.service.messages.length > root.loadStartCount
+      root.loadStartCount = -1
+      if (grew) root.loadMoreSoon()
+    }
   }
 }
