@@ -284,8 +284,9 @@ assert.strictEqual(imap.sequenceSet(null), "")
 
 assert.strictEqual(imap.uidListCommand(), "UID FETCH 1:* (UID)",
   "a UID snapshot is one bounded FETCH response line per message")
-assert.strictEqual(imap.uidCeilingCommand(), "UID FETCH *:* (UID)",
-  "an interactive search learns its stable ceiling without reading every UID")
+assert.strictEqual(imap.topUidCommand(1397), "FETCH 1397:* (UID)",
+  "an interactive search learns its ceiling from a numeric range curl passes through")
+assert.strictEqual(imap.topUidCommand(0), "", "an empty mailbox has no ceiling to fetch")
 deepEqual(imap.searchWindow("TEXT \"invoice\"", 9000), {
   command: "UID SEARCH UID 4905:9000 TEXT \"invoice\"", nextUid: 4904
 }, "the first interactive SEARCH window starts at the newest UID")
@@ -867,4 +868,30 @@ assert.strictEqual(imap.decodeResponse("", mail.base64ToBytes, mail.bytesToLatin
 assert.strictEqual(imap.decodeResponse("abc", null, null), "",
   "no decoder is an empty response, not a crash")
 
+// A folder name the user typed goes out in modified UTF-7 and comes back the
+// same: the round trip through `decodeMailbox` is the whole assertion.
+assert.strictEqual(imap.encodeMailbox("Receipts"), "Receipts")
+assert.strictEqual(imap.encodeMailbox("Tom & Jerry"), "Tom &- Jerry")
+assert.strictEqual(imap.encodeMailbox("日本語"), "&ZeVnLIqe-")
+assert.strictEqual(imap.decodeMailbox(imap.encodeMailbox("日本語")), "日本語")
+assert.strictEqual(imap.decodeMailbox(imap.encodeMailbox("Tom & Jerry/2026")), "Tom & Jerry/2026")
+assert.strictEqual(imap.decodeMailbox(imap.encodeMailbox("Café ☕")), "Café ☕")
+assert.strictEqual(imap.encodeMailbox(""), "")
+assert.strictEqual(imap.createCommand("Archive/2026"), "CREATE \"Archive/2026\"")
+assert.strictEqual(imap.renameCommand("Old", "Archive/New"), "RENAME \"Old\" \"Archive/New\"")
+assert.strictEqual(imap.deleteCommand("A \"quoted\" one"), "DELETE \"A \\\"quoted\\\" one\"")
+assert.strictEqual(imap.createCommand("日本語"), "CREATE \"&ZeVnLIqe-\"")
+// A name the server listed goes back as listed; only the typed name is
+// encoded. Encoding "Entw&APw-rfe" again would name "Entw&-APw-rfe".
+assert.strictEqual(imap.deleteCommand("Entw&APw-rfe"), "DELETE \"Entw&APw-rfe\"")
+assert.strictEqual(imap.renameCommand("Entw&APw-rfe", "Entwürfe/Alt"), "RENAME \"Entw&APw-rfe\" \"Entw&APw-rfe/Alt\"")
+
 console.log("Imap.js ok")
+
+// Folder mutations must refuse original names before quoting or UTF-7 encoding.
+for (const name of ["x\r", "x\n", "x\r\n", "x\0", "x\t", "x\x7f", "x\ud800", "x\udc00"]) {
+  assert.strictEqual(imap.createCommand(name), "")
+  assert.strictEqual(imap.renameCommand(name, "Valid"), "")
+  assert.strictEqual(imap.renameCommand("Valid", name), "")
+  assert.strictEqual(imap.deleteCommand(name), "")
+}

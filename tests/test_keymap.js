@@ -52,6 +52,21 @@ function byId(id) {
 })
 
 const undoSend = byId("undoSend")
+assert.strictEqual(keymap.contextFor({ assistantEditing: true, assistantCommands: true, composing: true }), "assistantCommands")
+assert.strictEqual(keymap.contextFor({ assistantEditing: true, assistantCommands: false, composing: true }), "assistant")
+assert.strictEqual(keymap.contextFor({ assistantEditing: false, assistantCommands: true, composing: true }), "compose")
+deepEqual(byId("assistantSend").keys, ["Return", "Enter", "Ctrl+Return", "Ctrl+Enter"])
+deepEqual(byId("assistantChooseCommand").keys, ["Return", "Enter"])
+assert.ok(!keymap.sequencesFor("assistant").some(entry => ["Up", "Down"].includes(entry.sequence)))
+for (const key of ["Return", "Enter"]) {
+  assert.strictEqual(keymap.sequencesFor("assistant").find(entry => entry.sequence === key).id, "assistantSend")
+  assert.strictEqual(keymap.sequencesFor("assistantCommands").find(entry => entry.sequence === key).id, "assistantChooseCommand")
+  for (const context of ["assistant", "assistantCommands"]) {
+    assert.ok(!keymap.sequencesFor(context).some(entry => entry.sequence === "Shift+" + key))
+  }
+}
+assert.ok(keymap.sequencesFor("assistantCommands").some(entry => entry.id === "assistantCommandDown" && entry.sequence === "Down"))
+assert.ok(!keymap.sequencesFor("compose").some(entry => entry.id === "assistantSend"))
 assert.ok(undoSend, "the delayed-send state offers an undo action")
 assert.strictEqual(keymap.displayFor(undoSend), "Alt+Z")
 keymap.CONTEXTS.forEach(function (context) {
@@ -110,6 +125,20 @@ assert.strictEqual(keymap.isEnabled(settings, "calendar", false), true,
   "settings must open from the calendar")
 assert.strictEqual(keymap.isEnabled(settings, "page", false), true,
   "the settings route is available from every screen")
+
+// Checking for mail answers to the browser's reload chord as well as its key.
+// Ctrl+R is a modified sequence, so it is live while a query or a draft is
+// being typed, where a bare `r` is a letter and stays reply's.
+deepEqual(byId("refresh").keys, ["F5", "Ctrl+R"],
+  "F5 and Ctrl+R both check for mail")
+// Through the table the router instantiates from, not `isSequenceEnabled`,
+// which answers for any sequence whether or not the row binds it.
+keymap.CONTEXTS.forEach(function (context) {
+  var live = keymap.sequencesFor(context).some(function (entry) {
+    return entry.id === "refresh" && entry.sequence === "Ctrl+R"
+  })
+  assert.strictEqual(live, true, "Ctrl+R must check for mail from " + context)
+})
 
 const zoomIn = byId("zoomIn")
 assert.strictEqual(keymap.isEnabled(zoomIn, "reader", false), true)
@@ -228,7 +257,7 @@ assert.strictEqual(keymap.hintKeyFor(byId("archive")), "e",
 
 const listHints = keymap.hintsFor("list")
 deepEqual(listHints.map(function (h) { return h.key + " " + h.label }),
-  ["j / k move", "o open", "e archive", "c compose"],
+  ["j / k move", "o open", "e archive", "d trash", "Space select", "c compose"],
   "the status bar offers what the list can do, in its short form")
 const composeHints = keymap.hintsFor("compose")
 deepEqual(composeHints.map(function (h) { return h.label }),

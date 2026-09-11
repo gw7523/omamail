@@ -168,7 +168,6 @@ function calendarScopeMessage() {
   return "Microsoft did not grant the Calendars.ReadWrite permission for Microsoft Graph. "
     + "Add it to the app registration, then sign in again"
 }
-
 function graphScopeMessage() {
   return "This sign-in has not granted the Mail.Send permission for Microsoft Graph. "
     + "Sign in again to grant it; if that does not help, add it to the app registration"

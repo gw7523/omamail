@@ -56,6 +56,7 @@ Item {
   property var special: ({})
   property bool foldersLoaded: false
   property bool foldersLoading: false
+  property int foldersGeneration: 0
   property var folderWaiters: []
 
   // What the server said it can do, asked for alongside the folder listing so
@@ -202,12 +203,20 @@ Item {
     }
     if (foldersLoading) return
     foldersLoading = true
+    var generation = foldersGeneration
 
     // No folder in the URL: both of these are asked of the server rather than
     // of a mailbox, and they share the one connection.
     run("", [Imap.capabilityCommand(), Imap.listCommand()], function(text, error) {
       root.foldersLoading = false
+      if (generation !== root.foldersGeneration) {
+        root.ensureFolders()
+        return
+      }
       if (!error) {
+        // This LIST is authoritative even when the last folder was deleted.
+        root.folders = Imap.parseList(text)
+        root.special = Imap.specialFolders(root.folders)
         root.adoptServerAnswer(text)
         root.foldersLoaded = true
       }
@@ -299,57 +308,54 @@ Item {
       // times, though, so an under-filled first range falls back to one snapshot
       // and one multi-command connection for everything older.
       if (typeof progress === "function" && criteria !== "") {
-        root.run(folder, [Imap.uidCeilingCommand()], function(ceilingText, ceilingError) {
+        var found = []
+        var emitted = {}
+        var nextUid = 0
+
+        function report(hasUnscanned) {
+          var partial = pageOf(found, hasUnscanned)
+          var ids = []
+          for (var i = 0; i < partial.ids.length; i++) {
+            if (emitted[partial.ids[i]]) continue
+            emitted[partial.ids[i]] = true
+            ids.push(partial.ids[i])
+          }
+          if (ids.length > 0) progress({
+            ids: ids,
+            threadIds: [],
+            nextPageToken: partial.nextPageToken,
+            estimate: partial.estimate
+          })
+          return partial
+        }
+
+        // `settled` says whether a first window has already answered: an
+        // error after one still leaves an authoritative prefix, an error
+        // before one says nothing about the cached preview.
+        function searchSnapshotRemainder(settled) {
           if (handle.aborted) return
-          if (ceilingError) {
-            finish([], ceilingError, false, false)
-            return
-          }
-          var ceiling = Imap.parseUidList(ceilingText)
-          var nextUid = ceiling.length > 0 ? ceiling[ceiling.length - 1] : 0
-          var found = []
-          var emitted = {}
-
-          function report(hasUnscanned) {
-            var partial = pageOf(found, hasUnscanned)
-            var ids = []
-            for (var i = 0; i < partial.ids.length; i++) {
-              if (emitted[partial.ids[i]]) continue
-              emitted[partial.ids[i]] = true
-              ids.push(partial.ids[i])
-            }
-            if (ids.length > 0) progress({
-              ids: ids,
-              threadIds: [],
-              nextPageToken: partial.nextPageToken,
-              estimate: partial.estimate
-            })
-            return partial
-          }
-
-          function searchSnapshotRemainder() {
+          root.run(folder, [Imap.uidListCommand()], function(snapshotText, snapshotError) {
             if (handle.aborted) return
-            root.run(folder, [Imap.uidListCommand()], function(snapshotText, snapshotError) {
+            if (snapshotError) {
+              finish(found, snapshotError, false, settled)
+              return
+            }
+            var snapshot = Imap.parseUidList(snapshotText)
+            var commands = Imap.searchCommands(criteria, snapshot, nextUid)
+            if (commands.length === 0) {
+              finish(found, "", false)
+              return
+            }
+            root.run(folder, commands, function(searchText, searchError) {
               if (handle.aborted) return
-              if (snapshotError) {
-                finish(found, snapshotError, false, true)
-                return
-              }
-              var snapshot = Imap.parseUidList(snapshotText)
-              var commands = Imap.searchCommands(criteria, snapshot, nextUid)
-              if (commands.length === 0) {
-                finish(found, "", false)
-                return
-              }
-              root.run(folder, commands, function(searchText, searchError) {
-                if (handle.aborted) return
-                if (!searchError) found = found.concat(Imap.parseSearch(searchText))
-                finish(found, searchError, false, true)
-              }, handle)
+              if (!searchError) found = found.concat(Imap.parseSearch(searchText))
+              finish(found, searchError, false, settled)
             }, handle)
-          }
+          }, handle)
+        }
 
-          var window = Imap.searchWindow(criteria, nextUid)
+        function searchBelow(ceiling) {
+          var window = Imap.searchWindow(criteria, ceiling)
           if (window.command === "") {
             finish(found, "", false)
             return
@@ -366,7 +372,45 @@ Item {
             if (partial.ids.length >= limit || nextUid === 0)
               finish(found, "", nextUid > 0)
             else
-              searchSnapshotRemainder()
+              searchSnapshotRemainder(true)
+          }, handle)
+        }
+
+        // The ceiling is the UID of the last message by sequence number,
+        // asked for in two short steps: the count from STATUS on an
+        // unselected connection, as the unread counts are, then one numeric
+        // FETCH. A FETCH that comes back empty — the last message expunged
+        // between the two — falls back to the complete snapshot rather than
+        // answering "nothing".
+        root.run("", [Imap.statusCommand(folder)], function(statusText, statusError) {
+          if (handle.aborted) return
+          if (statusError) {
+            finish([], statusError, false, false)
+            return
+          }
+          // A STATUS with no count is an odd server, not an empty mailbox:
+          // the complete snapshot answers instead of an authoritative nothing.
+          if (!/MESSAGES\s+\d+/i.test(String(statusText || ""))) {
+            searchSnapshotRemainder(false)
+            return
+          }
+          var count = Imap.parseStatus(statusText).messages
+          if (count < 1) {
+            finish([], "", false)
+            return
+          }
+          root.run(folder, [Imap.topUidCommand(count)], function(ceilingText, ceilingError) {
+            if (handle.aborted) return
+            // Some servers answer BAD to a range that starts past the end,
+            // which an expunge between STATUS and this FETCH can produce.
+            // The snapshot is the authoritative answer either way.
+            if (ceilingError) {
+              searchSnapshotRemainder(false)
+              return
+            }
+            var ceiling = Imap.parseUidList(ceilingText)
+            if (ceiling.length === 0) searchSnapshotRemainder(false)
+            else searchBelow(Math.max.apply(null, ceiling))
           }, handle)
         }, handle)
         return
@@ -560,6 +604,9 @@ Item {
           id: folder.name,
           name: Imap.decodeMailbox(folder.name),
           rawName: folder.name,
+          // What the server separates a hierarchy with, so the sidebar can
+          // fold "Archive/2026" under "Archive" without guessing the slash.
+          delimiter: String(folder.delimiter || ""),
           // "system" means the mailbox row already offers it, so the sidebar
           // lists only the rest below. Judged on SPECIAL-USE rather than on the
           // structural flags every server sends on every folder.
@@ -707,6 +754,38 @@ Item {
     return handle
   }
 
+  // The folder list, changed. No mailbox is selected for these — the URL is
+  // the server alone — and the cached listing is dropped so the next read
+  // sees the server's answer rather than this client's memory of it.
+  function createLabel(name, callback) {
+    return changeFolders([Imap.createCommand(name)], callback)
+  }
+
+  function renameLabel(id, name, callback) {
+    return changeFolders([Imap.renameCommand(id, name)], callback)
+  }
+
+  function deleteLabel(id, callback) {
+    return changeFolders([Imap.deleteCommand(id)], callback)
+  }
+
+  function changeFolders(commands, callback) {
+    // Check the complete batch before credentials or a transport are requested.
+    for (var i = 0; i < commands.length; i++) {
+      if (commands[i] === "") {
+        if (typeof callback === "function") callback(null, "This folder name cannot be sent safely")
+        return newHandle()
+      }
+    }
+    return root.run("", commands, function(text, error) {
+      if (!error) {
+        root.foldersGeneration++
+        root.foldersLoaded = false
+      }
+      if (typeof callback === "function") callback(null, error)
+    })
+  }
+
   // One id or a list of them, the way every other verb here already takes one.
   // A row that stands for a conversation is trashed as its members, and the
   // list arrives here flat — `applyPlan` groups by folder either way, so a
@@ -845,6 +924,35 @@ Item {
     return handle
   }
 
+  // The draft a sent message was opened from, taken away with the same
+  // commands a save uses to remove the copy it replaced.
+  function deleteDraft(messageId, callback) {
+    var handle = newHandle()
+    ensureFolders(function(folderError) {
+      if (handle.aborted) return
+      if (folderError) {
+        if (typeof callback === "function") callback(null, folderError)
+        return
+      }
+      var groups = Imap.groupByFolder([String(messageId || "")])
+      if (groups.length === 0) {
+        if (typeof callback === "function") callback(null, "")
+        return
+      }
+      var folder = groups[0].folder
+      var plan = Imap.draftReplacementPlan(String(messageId || ""), folder)
+      if (plan.commands.length === 0) {
+        if (typeof callback === "function") callback(null, plan.warning)
+        return
+      }
+      root.run(folder, plan.commands, function(text, error) {
+        if (handle.aborted) return
+        if (typeof callback === "function") callback(null, error)
+      }, handle)
+    })
+    return handle
+  }
+
   // `MailAccount` builds the same payload for either provider: a base64url
   // `raw` field, because that is what Gmail's send endpoint takes. SMTP wants
   // the message itself and the envelope separately, so it is decoded back and
@@ -946,6 +1054,11 @@ Item {
       if (typeof callback === "function") callback(null, "This mailbox cannot send through Microsoft Graph")
       return handle
     }
+    // The message is bound to the session that queued it. A token arriving
+    // for a mailbox that is no longer this one belongs to that mailbox, not
+    // to this MIME: the send is refused rather than carried to whoever is
+    // signed in now.
+    var session = typeof auth.sessionContext === "function" ? auth.sessionContext() : null
     root.inFlight++
     auth.withGraphToken(function(token, tokenError) {
       if (!root) return
@@ -953,9 +1066,13 @@ Item {
         root.inFlight = Math.max(0, root.inFlight - 1)
         return
       }
-      if (!token) {
+      var mine = !session || typeof auth.isCurrent !== "function" || auth.isCurrent(session)
+      if (!token || !mine) {
         root.inFlight = Math.max(0, root.inFlight - 1)
-        if (typeof callback === "function") callback(null, tokenError || "Not signed in to Microsoft Graph")
+        if (typeof callback === "function") {
+          callback(null, !mine ? "This mailbox is no longer signed in"
+            : (tokenError || "Not signed in to Microsoft Graph"))
+        }
         return
       }
       var message = Mail.decodeBase64Url(raw)
