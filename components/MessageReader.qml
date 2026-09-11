@@ -52,6 +52,7 @@ Item {
   signal composeRequested(string mode)
   signal mailtoRequested(string url)
   signal actionRequested(string action)
+  signal agentRequested(real sceneX, real sceneY)
   // A right-click on the From line or the To line: the addresses on it, and
   // where the menu goes. What is done with them is the window's decision.
   signal addressMenuRequested(var addresses, real sceneX, real sceneY)
@@ -590,32 +591,12 @@ Item {
       onOpenRequested: function(url) { Qt.openUrlExternally(url) }
     }
 
-    // What the agent found in the message, if the owner asked it to look:
-    // a card per event, with the calendar's composer one press away.
-    EventSuggestionCard {
-      id: suggestionCard
-      objectName: "eventSuggestions"
-      x: root.bodyInset
-      y: inviteCard.visible ? inviteCard.y + inviteCard.height + Style.space(14) : Style.space(24)
-      width: root.bodyWidth
-      suggestions: root.service && root.service.eventSuggestions ? root.service.eventSuggestions : []
-      textColor: root.textColor
-      accentColor: root.accentColor
-      dimColor: root.dimColor
-      dimmerColor: root.dimmerColor
-      panelFontFamily: root.panelFontFamily
-      onAddRequested: function(suggestion) { if (root.service) root.service.addSuggestedEvent(suggestion) }
-      onDismissRequested: function(key) { if (root.service) root.service.dismissSuggestion(key) }
-    }
-
     TextEdit {
       id: bodyText
       x: root.bodyInset + root.bodyOffset
-      y: suggestionCard.visible
-        ? suggestionCard.y + suggestionCard.height + Style.space(14)
-        : (inviteCard.visible
-          ? inviteCard.y + inviteCard.height + Style.space(14)
-          : Style.space(24))
+      y: inviteCard.visible
+        ? inviteCard.y + inviteCard.height + Style.space(14)
+        : Style.space(24)
       width: root.preferredBodyWidth
       readOnly: true
       selectByMouse: true
@@ -872,7 +853,7 @@ Item {
             : actionGap.x + actionGap.width) + messageActions.gap
           y: Math.round((parent.height - height) / 2)
           visible: !!root.service && root.service.canMoveToLabel
-          iconName: "label"; tooltipText: "Move to a label · v"
+          iconName: "label"; tooltipText: "Move to... · v"
           foreground: root.dimColor; hoverColor: root.textColor; fontFamily: root.panelFontFamily
           onClicked: root.actionRequested("moveToLabel")
         }
@@ -887,23 +868,6 @@ Item {
           iconName: "trash"; tooltipText: "Move to trash · d"
           foreground: root.dimColor; hoverColor: root.textColor; fontFamily: root.panelFontFamily
           onClicked: root.actionRequested("trash")
-        }
-        // The agent, only where one is configured: a button that could not
-        // act is the button the capability rule exists to keep off the panel.
-        // Lit while its popup is up, like every trigger, and lit in the accent
-        // while a job is running so the reader says so without being asked.
-        IconButton {
-          id: agentButton
-          objectName: "reader-agent-button"
-          x: trashButton.x + trashButton.width + messageActions.gap
-          y: Math.round((parent.height - height) / 2)
-          visible: !!root.service && root.service.hasAgent
-          iconName: "agent"; tooltipText: "Ask the agent · Alt+G"
-          foreground: root.agentWorking ? root.accentColor : root.dimColor
-          hoverColor: root.textColor; fontFamily: root.panelFontFamily
-          selected: root.agentOpen
-          attention: root.agentAttention
-          onClicked: root.actionRequested("agent")
         }
 
       }

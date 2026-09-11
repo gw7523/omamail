@@ -233,6 +233,8 @@ QtObject {
   property string followLabelPath: ""
   property var migrations: []
   property bool reloadRetried: false
+  property bool reloading: false
+  property bool reloadQueued: false
 
   function afterLabelMoved(label, newPath, before) {
     var wasOpen = account.rawQuery !== "" && account.rawQuery === Provider.labelQuery(account.providerId, String(label.rawName || label.name || ""))
@@ -244,8 +246,18 @@ QtObject {
 
   function reloadLabels() {
     if (!account.ready) return
+    if (reloading) { reloadQueued = true; return }
+    reloading = true
     account.api.getLabels(function(result, error) {
       if (!labelActions) return
+      reloading = false
+      // A later mutation requested a newer listing. Keep its migrations until
+      // a read started after that mutation returns, even if this read failed.
+      if (reloadQueued) {
+        reloadQueued = false
+        reloadLabels()
+        return
+      }
       if (error) {
         // The change went through; the listing did not. One more try, and
         // after that the moves wait for the next listing a change brings.
@@ -261,9 +273,7 @@ QtObject {
       migrations = []
       if (moves.length > 0) {
         var watched = Array.isArray(account.monitoredIds) ? account.monitoredIds : []
-        var next = watched
-        for (var m = 0; m < moves.length; m++)
-          next = Model.migrateMonitoredIds(next, moves[m].before, result, moves[m].oldPath, moves[m].newPath, moves[m].delimiter)
+        var next = Model.migrateMonitoredChanges(watched, moves, result)
         if (next !== watched) account.monitoredMigrated(next)
       }
       if (followLabelPath !== "") {

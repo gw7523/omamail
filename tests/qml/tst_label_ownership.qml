@@ -269,6 +269,56 @@ Item {
       tryCompare(account.labelActions, "monitoredLoading", false)
     }
 
+    function labelRow(path) {
+      function find(item) {
+        if (item.fullPath === path && item.selected !== undefined) return item
+        var kids = item.children || []
+        for (var i = 0; i < kids.length; i++) { var f = find(kids[i]); if (f) return f }
+        return null
+      }
+      return find(app)
+    }
+
+    function test_context_target_stays_active_until_menu_closes() {
+      seed([entry(ada), entry(bob)], adaId)
+      var work = labelRow("Work")
+      var receipts = labelRow("Receipts")
+      verify(work !== null)
+      verify(receipts !== null)
+      compare(work.selected, false)
+      var query = mailService.rawQuery
+      work.menuRequested(10, 10)
+      var menu = popup("label-menu")
+      tryCompare(menu, "opened", true)
+      compare(work.selected, true, "The row that opened the context menu must stay active")
+      receipts.menuRequested(10, 10)
+      compare(receipts.selected, true)
+      compare(work.selected, false)
+      compare(mailService.rawQuery, query)
+      menu.close()
+      tryCompare(menu, "opened", false)
+      compare(receipts.selected, false)
+      work.menuRequested(10, 10)
+      tryCompare(menu, "opened", true)
+      switchTo(bobId)
+      tryCompare(menu, "opened", false)
+      compare(labelRow("Work").selected, false)
+    }
+    function test_review_delete_keeps_surviving_child_watch() {
+      seed([entry(ada, ["Work/2026", "Receipts"])], adaId)
+      record.listing[ada] = [folder("Work/2026"), folder("Receipts")]
+      verify(mailService.deleteLabel("Work", adaId))
+      tryVerify(function() { return mailService.accountAt(0).labels.length === 2 }, 1000)
+      deepEqualIds(mailService.monitoredLabelIds, ["Work/2026", "Receipts"])
+    }
+    function test_review_two_renames_keep_both_watches() {
+      seed([entry(ada, ["Work", "Receipts"])], adaId)
+      record.listing[ada] = [folder("Jobs"), folder("Jobs/2026"), folder("Bills")]
+      verify(mailService.renameLabel("Work", "Jobs", adaId))
+      verify(mailService.renameLabel("Receipts", "Bills", adaId))
+      tryVerify(function() { return mailService.accountAt(0).labels[0].id === "Jobs" }, 1000)
+      deepEqualIds(mailService.monitoredLabelIds, ["Jobs", "Bills"])
+    }
     function deepEqualIds(actual, expected) {
       compare(JSON.stringify(actual), JSON.stringify(expected))
     }

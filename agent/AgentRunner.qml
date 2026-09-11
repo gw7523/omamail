@@ -4,9 +4,8 @@ import Quickshell.Io
 import "Agent.js" as Agent
 
 // The jobs the window can see, and the two things it can do to them: start
-// one, stop one. Every job is a transient systemd user unit run by
-// `scripts/agent-job.py`, so nothing here outlives or is outlived by the
-// shell by accident — see docs/AGENT.md.
+// one, close one. Each turn runs in a background system AI process through
+// `scripts/agent-job.py` and may outlive the dock — see docs/AGENT.md.
 //
 // A poll rather than a watch: a directory of small files rewritten by another
 // process is the case a file watcher reports late or twice, and two seconds
@@ -44,11 +43,15 @@ Item {
   signal failed(string text)
 
   property string startPayload: ""
+  property string lastError: ""
+  property bool startTimedOut: false
+  readonly property bool starting: starter.running
 
-  // One job's output, for the pane: the id being watched and the tail the
+  // One job's output, for the dock: the id being watched and the text the
   // runner last returned. Re-read on every poll while that job is running.
   property string shownId: ""
   property string shownOutput: ""
+  property var shownTranscript: []
 
   function runner() { return pluginDir + "/scripts/agent-job.py" }
 
@@ -68,21 +71,22 @@ Item {
   }
 
   // One line of JSON on stdin — `Agent.payload` — and the runner makes the
-  // directory and the unit. The listing follows straight away, so the row
+  // directory and the background request. The listing follows straight away, so the row
   // shows the job before the poll would have found it.
   function start(payloadLine) {
-    if (pluginDir === "" || starter.running) return false
+    if (pluginDir === "") { lastError = "Omamail could not locate its AI helper. Reload the plugin."; return false }
+    if (starter.running) { lastError = "AI is still starting. Try again shortly."; return false }
+    lastError = ""
+    startTimedOut = false
     startPayload = String(payloadLine || "")
     if (startPayload === "") return false
     starter.command = ["python3", runner(), "new"]
     starter.running = true
+    startupDeadline.restart()
     return true
   }
 
   readonly property bool cancelling: canceller.running
-  // Whether a start is in flight: `start` refuses another until it lands,
-  // and a caller with something to start can wait for this to drop.
-  readonly property bool starting: starter.running
 
   function cancel(messageId, owner) {
     var job = jobFor(messageId, owner)
@@ -98,13 +102,17 @@ Item {
     return true
   }
 
+  property bool showQueued: false
+
   function show(jobId) {
     var id = String(jobId || "")
     if (id !== shownId) {
       shownId = id
       shownOutput = ""
+      shownTranscript = []
     }
-    if (pluginDir === "" || id === "" || shower.running) return
+    if (pluginDir === "" || id === "") return
+    if (shower.running) { showQueued = true; return }
     shower.command = ["python3", runner(), "show", id]
     shower.running = true
   }
@@ -169,9 +177,12 @@ Item {
       root.startPayload = ""
     }
     onExited: function(exitCode) {
+      startupDeadline.stop()
       root.startPayload = ""
+      if (root.startTimedOut) return
       if (exitCode !== 0) {
-        root.failed("Could not start the agent: " + String(stderr.text || "").trim())
+        root.lastError = "Could not start AI: " + String(stderr.text || "").trim()
+        root.failed(root.lastError)
         return
       }
       root.refresh()
@@ -204,20 +215,35 @@ Item {
     stdout: StdioCollector { waitForEnd: true }
     stderr: StdioCollector { waitForEnd: true }
     onExited: function(exitCode) {
-      if (exitCode !== 0) return
-      var shown = Agent.parseShown(String(stdout.text || ""))
-      if (!shown || String(shown.job.id || "") !== root.shownId) return
-      root.shownOutput = shown.output
+      var shown = exitCode === 0 ? Agent.parseShown(String(stdout.text || "")) : null
+      if (shown && String(shown.job.id || "") === root.shownId) {
+        root.shownOutput = shown.output
+        if (JSON.stringify(root.shownTranscript) !== JSON.stringify(shown.transcript)) root.shownTranscript = shown.transcript
+      }
+      if (root.showQueued) { root.showQueued = false; root.show(root.shownId) }
     }
   }
 
   Timer {
-    interval: 2000
+    interval: 500
     repeat: true
     running: root.anyActive
     onTriggered: {
       root.refresh()
       if (root.shownId !== "" && Agent.isActive(root.jobFor2(root.shownId))) root.show(root.shownId)
+    }
+  }
+
+  Timer {
+    id: startupDeadline
+    interval: 15000
+    onTriggered: {
+      root.startTimedOut = true
+      root.lastError = "Starting AI timed out. Retry the request."
+      starter.running = false
+      root.startPayload = ""
+      root.failed(root.lastError)
+      root.refresh()
     }
   }
 

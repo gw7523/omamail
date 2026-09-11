@@ -16,6 +16,129 @@ assert.strictEqual(memberAgain.length, 1)
 assert.strictEqual(memberAgain[0].memberOnly, true)
 deepEqual(model.enqueueAction([memberRead], rowRead), [memberRead, rowRead])
 
+// A repeat keeps the first send; an explicit press behind a quiet one is its own.
+const firstSend = () => {}
+const secondSend = () => {}
+const coalesced = model.enqueueAction([{ ...rowRead, dispatch: firstSend }],
+  { ...rowRead, dispatch: secondSend })
+assert.strictEqual(coalesced.length, 1)
+assert.strictEqual(coalesced[0].dispatch, firstSend)
+const inTurn = model.enqueueAction([{ ...rowRead, quiet: true, dispatch: firstSend }],
+  { ...rowRead, dispatch: secondSend })
+assert.strictEqual(inTurn.length, 2)
+assert.strictEqual(inTurn[1].dispatch, secondSend)
+
+// A failed row is anchored by its surviving neighbour, not its stale index.
+const listBefore = [{ id: "a" }, { id: "b" }, { id: "c" }, { id: "d" }]
+deepEqual(model.restoreRow([{ id: "a" }, { id: "d" }], listBefore[2], listBefore, 2),
+  [{ id: "a" }, listBefore[2], { id: "d" }], "the first surviving follower anchors the row")
+deepEqual(model.restoreRow([{ id: "x" }, { id: "a" }, { id: "d" }], listBefore[1], listBefore, 1),
+  [{ id: "x" }, { id: "a" }, listBefore[1], { id: "d" }],
+  "a row that arrived above since does not push it past its follower")
+deepEqual(model.restoreRow([{ id: "a" }], listBefore[2], listBefore, 2),
+  [{ id: "a" }, listBefore[2]], "with no follower left the index is clamped")
+deepEqual(model.restoreRow([], listBefore[0], listBefore, 0), [listBefore[0]])
+// The order is the settled list, not the list the failed edit saw. Two rows
+// removed in turn and refused in turn: the second saw a list the first had
+// already left, and anchored to that it went back above the first.
+deepEqual(model.restoreRow([listBefore[0]], listBefore[1], listBefore, 0).map(r => r.id),
+  ["a", "b"], "with no follower left, the last surviving predecessor anchors the row")
+deepEqual(model.restoreRow([listBefore[0]], listBefore[1], [listBefore[1]], 0).map(r => r.id),
+  ["b", "a"], "which the failed edit's own snapshot could not have said")
+deepEqual(model.restoreRow([listBefore[3]], { id: "n" }, listBefore, 1).map(r => r.id),
+  ["d", "n"], "a row the settled list never held falls back to its index, clamped")
+
+const sendA = () => {}
+const sendB = () => {}
+assert.strictEqual(model.holdsDispatch([{ dispatch: sendA }], sendA), true)
+assert.strictEqual(model.holdsDispatch([{ dispatch: sendA }], sendB), false,
+  "a coalesced repeat's send is not in the queue")
+assert.strictEqual(model.holdsDispatch(null, sendA), false)
+
+const previews = [{ id: "a", unread: true }, { id: "c", unread: true }]
+deepEqual(model.previewAfterRestore(previews, { id: "b", unread: true }, true, listBefore, 1).map(r => r.id),
+  ["a", "b", "c"], "an unread row goes back into the preview where the order says")
+deepEqual(model.previewAfterRestore(previews, { id: "a", unread: true, starred: true }, true, listBefore, 0)[0].starred,
+  true, "a row still listed is replaced")
+deepEqual(model.previewAfterRestore(previews, { id: "a" }, false, listBefore, 0).map(r => r.id),
+  ["c"], "a row that should not be there comes out")
+deepEqual(model.previewAfterRestore(previews, { id: "b" }, false, listBefore, 1), previews)
+
+// A refused edit's row goes back into whichever list holds the query now —
+// the screen or the cached copy — by the same rule: replaced while listed,
+// put back in the settled order when this edit took it off and no edit still
+// waiting has, else the list untouched.
+{
+  const order = [{ id: "a" }, { id: "b" }, { id: "c" }]
+  const row = { id: "b", unread: true }
+  deepEqual(model.listAfterRestore([{ id: "a" }, { id: "c" }], row, true, false, order, 1).map(r => r.id),
+    ["a", "b", "c"], "a removed row goes back where the settled order says")
+  deepEqual(model.listAfterRestore([{ id: "a" }, { id: "b", unread: false }], row, false, false, order, 1)[1],
+    row, "a row still listed is replaced by its replay")
+  deepEqual(model.listAfterRestore([{ id: "a" }], row, true, true, order, 1).map(r => r.id),
+    ["a"], "a row an edit behind this one took off stays off")
+  deepEqual(model.listAfterRestore([{ id: "a" }], row, false, false, order, 1).map(r => r.id),
+    ["a"], "a row this edit never removed is not put in")
+  deepEqual(model.listAfterRestore(null, row, true, false, order, 0).map(r => r.id), ["b"])
+  deepEqual(model.listAfterRestore([{ id: "a" }], null, true, false, order, 0).map(r => r.id), ["a"])
+}
+
+// ------------------------------------------------------------------ intents
+//
+// One row, two edits taken at the keystroke, the first refused: what stays is
+// the second edit applied to the state the first started from.
+{
+  const star = s => ({ ...s, starred: true })
+  const read = s => ({ ...s, unread: false })
+  const held = [
+    { token: 1, before: { id: "m", unread: true, starred: false }, apply: star },
+    { token: 2, before: { id: "m", unread: true, starred: true }, apply: read, removed: false }
+  ]
+  const rebased = model.rebaseIntents(held, 1)
+  deepEqual(rebased.summary, { id: "m", unread: false, starred: false },
+    "the star comes off and the read stays")
+  assert.strictEqual(rebased.entries.length, 1)
+  assert.strictEqual(rebased.entries[0].token, 2)
+  deepEqual(rebased.entries[0].before, { id: "m", unread: true, starred: false },
+    "the edit behind now starts from where the failed one did")
+  deepEqual(held[1].before, { id: "m", unread: true, starred: true }, "the held entry is not written to")
+  deepEqual(model.rebaseIntents(held, 2).summary, { id: "m", unread: true, starred: true },
+    "the last edit failing leaves the first")
+  assert.strictEqual(model.rebaseIntents(held, 9), null, "an answer nobody waited for")
+  deepEqual(model.withoutIntent(held, 1).map(e => e.token), [2])
+  deepEqual(model.withoutIntent(null, 1), [])
+  assert.strictEqual(model.anyIntentRemoved(held), false)
+  assert.strictEqual(model.anyIntentRemoved(held.concat([{ token: 3, removed: true }])), true)
+
+  let intents = model.intentsWith({}, "m", held[0])
+  intents = model.intentsWith(intents, "m", held[1])
+  assert.strictEqual(intents.m.length, 2)
+  const failed = model.intentsSettled(intents, "m", 1, true, null)
+  deepEqual(failed.outcome.summary, { id: "m", unread: false, starred: false })
+  assert.strictEqual(failed.intents.m.length, 1, "the failed intent is gone, the other is held")
+  const kept = model.intentsSettled(failed.intents, "m", 2, false, null)
+  assert.strictEqual(kept.intents.m, undefined, "nothing held once every edit is answered")
+  assert.strictEqual(kept.outcome.summary, null)
+  const unknown = model.intentsSettled({}, "m", 7, true, { id: "m" })
+  deepEqual(unknown.outcome.summary, { id: "m" }, "an id nothing was held for answers with the fallback")
+  deepEqual(unknown.intents, {})
+}
+
+// The settled lists are taken at the first edit in flight on a query and held
+// through the rest, so a later edit cannot re-take a list an earlier one has
+// already shortened.
+{
+  let lists = model.settledListsHeld({}, "q", [{ id: "a" }, { id: "b" }], [])
+  lists = model.settledListsHeld(lists, "q", [{ id: "b" }], [])
+  deepEqual(lists.q.messages.map(r => r.id), ["a", "b"], "the second hold keeps the first list")
+  assert.strictEqual(lists.q.pending, 2)
+  lists = model.settledListsReleased(lists, "q")
+  assert.strictEqual(lists.q.pending, 1)
+  lists = model.settledListsReleased(lists, "q")
+  assert.strictEqual(lists.q, undefined, "released once nothing is in flight")
+  deepEqual(model.settledListsReleased({}, "q"), {})
+}
+
 // ------------------------------------------------------------ setup state
 
 assert.strictEqual(model.setupState({ toolsPresent: false }), "tools_missing")
@@ -695,8 +818,9 @@ assert.strictEqual(model.actionUnavailable("spam", "IMAP"),
 assert.strictEqual(model.actionUnavailable("trash", "HEY"), "")
 
 deepEqual(model.unavailableActions({ archive: true, star: true, spam: true, move: true }), [])
-deepEqual(model.unavailableActions({ archive: false, star: false, move: true }), ["archive", "star"])
-deepEqual(model.unavailableActions(null), ["archive", "star", "moveToLabel"],
+deepEqual(model.unavailableActions({ archive: false, star: false, move: false }),
+  ["archive", "star", "move"])
+deepEqual(model.unavailableActions(null), ["archive", "star", "move"],
   "an unknown provider offers nothing it cannot prove")
 
 // The number a row's badge shows, and the floor under it: two or more on a
@@ -1358,6 +1482,12 @@ const alsoDeep = { id: "m", a: { b: { c: { d: { e: 1 } } } } }
 assert.strictEqual(model.sameSummaries([deep], [alsoDeep]), false,
   "the comparison stops rather than following an unbounded structure")
 
+assert.strictEqual(model.activityStatus({}), "", "nothing in flight says nothing")
+assert.strictEqual(model.activityStatus({ sending: 1 }), "Sending")
+assert.strictEqual(model.activityStatus({ sending: 2, queuedSends: 3 }), "Sending 2 \u00b7 3 queued to send")
+assert.strictEqual(model.activityStatus({ running: 1, waiting: 4 }), "1 action running \u00b7 4 waiting")
+assert.strictEqual(model.activityStatus({ sending: "x", waiting: -2 }), "", "nonsense counts are zero")
+
 // ------------------------------------------------------------ label names
 {
   assert.strictEqual(model.labelLeaf("Archive/2026/Q1", "/"), "Q1")
@@ -1452,6 +1582,18 @@ assert.strictEqual(model.monitoredNote([]), "")
   deepEqual(model.migrateMonitoredIds(null, before, after, "Work", "Jobs", "/"), [])
 }
 
+// A queued chain is resolved against the final list only.
+{
+  const old = [{id: "Work", name: "Work"}, {id: "Receipts", name: "Receipts"}]
+  const moves = [
+    {before: old, oldPath: "Work", newPath: "Jobs", delimiter: "/"},
+    {before: old, oldPath: "Receipts", newPath: "Bills", delimiter: "/"},
+    {before: [{id: "Jobs", name: "Jobs"}], oldPath: "Jobs", newPath: "Tasks", delimiter: "/"}
+  ]
+  deepEqual(model.migrateMonitoredChanges(["Work", "Receipts"], moves,
+    [{id: "Tasks", name: "Tasks"}, {id: "Bills", name: "Bills"}]), ["Tasks", "Bills"])
+}
+
 // ------------------------------------------------------------ type to find
 {
   assert.ok(model.fuzzyScore("sfl", "SFL") > 0)
@@ -1505,4 +1647,4 @@ assert.strictEqual(model.monitoredNote([]), "")
 
 // A provider with no move verb is told so in the hints, the way archive is.
 deepEqual(model.unavailableActions({ archive: true, star: true, move: true }), [])
-deepEqual(model.unavailableActions({ archive: true, star: true }), ["moveToLabel"])
+deepEqual(model.unavailableActions({ archive: true, star: true }), ["move"])

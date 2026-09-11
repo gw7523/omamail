@@ -3,7 +3,6 @@ import Quickshell.Io
 import qs.Commons
 import qs.Ui
 import "../message/Direction.js" as Direction
-import "../agent/Agent.js" as Agent
 import "../message/Signature.js" as Signature
 import "../message/Html.js" as Html
 
@@ -46,24 +45,11 @@ Column {
     { key: "reading", title: "Reading", y: readingHeading.y },
     { key: "notifications", title: "Notifications", y: notificationsHeading.y },
     { key: "writing", title: "Writing", y: writingHeading.y },
-    { key: "agent", title: "Agent", y: agentHeading.y },
     { key: "mailboxes", title: "Mailboxes", y: mailboxesHeading.y },
     { key: "calendars", title: "Calendars", y: calendarsSection.y },
     { key: "oauth", title: "Google OAuth client", y: oauthHeading.y }
   ]
   readonly property var auth: service ? service.auth : null
-
-  function saveAgentCommand() {
-    if (!root.service) return
-    var next = String(agentEdit.text || "").trim()
-    if (next !== root.service.agentCommand) root.service.setAgentCommand(next)
-  }
-
-  function saveLookCommand() {
-    if (!root.service) return
-    var next = String(lookEdit.text || "").trim()
-    if (next !== root.service.lookCommandOwn) root.service.setLookCommand(next)
-  }
 
   function signatureAccount(id) {
     for (var i = 0; i < signatureAccounts.length; i++)
@@ -886,208 +872,6 @@ Column {
     }
 
     Component.onDestruction: root.saveSignature()
-  }
-
-  // ----------------------------------------------------------------- agent
-
-  Text {
-    id: agentHeading
-    text: "AGENT"
-    color: root.dimColor
-    font.family: root.panelFontFamily
-    font.pixelSize: Style.font.caption
-    font.letterSpacing: 1
-  }
-
-  // The default agent: a command line, and nothing else. With it empty there
-  // is no agent button anywhere; docs/AGENT.md says what the command is
-  // handed and what it is expected to do.
-  Column {
-    objectName: "settings-agent-section"
-    width: parent.width
-    spacing: Style.space(6)
-
-    Text {
-      width: parent.width
-      text: "Harness"
-      color: root.textColor
-      font.family: root.panelFontFamily
-      font.pixelSize: Style.font.bodySmall
-    }
-
-    // A starting line for each harness, and "Custom" for one of your own.
-    // Choosing one writes its command into the field below, which stays
-    // editable; an edited line reads back as Custom, honestly.
-    Dropdown {
-      objectName: "settings-agent-preset"
-      width: parent.width
-      showLabel: false
-      value: Agent.presetFor(root.service ? root.service.agentCommand : "") || "custom"
-      options: root.service ? root.service.agentPresetOptions : Agent.presetOptions([])
-      foreground: root.textColor
-      accent: root.accentColor
-      fontFamily: root.panelFontFamily
-      onChanged: function(next) {
-        var preset = Agent.presetById(next)
-        if (!preset || !root.service) return
-        if (preset.command === "") return
-        agentEdit.text = preset.command
-        root.saveAgentCommand()
-      }
-    }
-
-    Text {
-      id: presetNote
-      width: parent.width
-      readonly property var preset: Agent.presetById(
-        Agent.presetFor(root.service ? root.service.agentCommand : "") || "custom")
-      visible: !!preset && preset.note !== ""
-      textFormat: Text.PlainText
-      text: preset ? preset.note : ""
-      color: root.dimColor
-      font.family: root.panelFontFamily
-      font.pixelSize: Style.font.caption
-      wrapMode: Text.WordWrap
-    }
-
-    Text {
-      width: parent.width
-      text: "Command"
-      color: root.textColor
-      font.family: root.panelFontFamily
-      font.pixelSize: Style.font.bodySmall
-    }
-
-    TextField {
-      id: agentEdit
-      objectName: "settings-agent-editor"
-      width: parent.width
-      foreground: root.textColor
-      accent: root.accentColor
-      font.family: root.panelFontFamily
-      font.pixelSize: Style.font.bodySmall
-      placeholderText: "claude -p"
-      text: root.service ? root.service.agentCommand : ""
-      onActiveFocusChanged: if (!activeFocus) root.saveAgentCommand()
-      onAccepted: root.saveAgentCommand()
-    }
-
-    Text {
-      width: parent.width
-      textFormat: Text.PlainText
-      text: "Runs in the background as a systemd user unit with the prompt on "
-        + "stdin, and reads and writes mail through himalaya, so the command "
-        + "must be able to run himalaya without stopping to ask. With one set, "
-        + "every message gains an agent button and Alt+G, and the rail gains the "
-        + "agent pane. Leave it empty for no agent."
-      color: root.dimColor
-      font.family: root.panelFontFamily
-      font.pixelSize: Style.font.caption
-      wrapMode: Text.WordWrap
-    }
-
-    // A look is small and frequent, so it runs at the harness's cheapest
-    // model where the preset knows one; a line typed here runs instead.
-    Text {
-      width: parent.width
-      text: "Agent for background looks"
-      color: root.textColor
-      font.family: root.panelFontFamily
-      font.pixelSize: Style.font.bodySmall
-    }
-
-    TextField {
-      id: lookEdit
-      objectName: "settings-look-editor"
-      width: parent.width
-      foreground: root.textColor
-      accent: root.accentColor
-      font.family: root.panelFontFamily
-      font.pixelSize: Style.font.bodySmall
-      placeholderText: root.service && root.service.lookCommand !== "" ? root.service.lookCommand : "the default agent"
-      text: root.service ? root.service.lookCommandOwn : ""
-      onActiveFocusChanged: if (!activeFocus) root.saveLookCommand()
-      onAccepted: root.saveLookCommand()
-    }
-
-    Text {
-      width: parent.width
-      textFormat: Text.PlainText
-      text: "What the search for calendar events in a message you open runs. "
-        + "Empty runs the default agent's harness at its cheapest model with no "
-        + "tools, where a preset knows it — Claude Code at claude-haiku-4-5, "
-        + "Codex at gpt-5.1-codex-mini read-only, Gemini at gemini-2.5-flash — "
-        + "or the default agent as it is."
-      color: root.dimColor
-      font.family: root.panelFontFamily
-      font.pixelSize: Style.font.caption
-      wrapMode: Text.WordWrap
-    }
-
-    // A look at every message opened, on the owner's behalf. Off until it
-    // is turned on, because the message text leaves the window for the
-    // agent command; the switch says in a word which way it stands.
-    Item {
-      objectName: "settings-suggest-events"
-      width: parent.width
-      implicitHeight: suggestText.implicitHeight + Style.space(12)
-
-      Column {
-        id: suggestText
-        anchors.left: parent.left
-        anchors.right: suggestState.left
-        anchors.rightMargin: Style.space(10)
-        anchors.verticalCenter: parent.verticalCenter
-        spacing: Style.space(2)
-
-        Text {
-          width: parent.width
-          text: "Suggest calendar events from mail"
-          color: root.textColor
-          font.family: root.panelFontFamily
-          font.pixelSize: Style.font.bodySmall
-          textFormat: Text.PlainText
-        }
-
-        Text {
-          width: parent.width
-          text: "A message you open that mentions a date is handed to the agent "
-            + "once, in the background; the events it finds show above the "
-            + "message with Add and Dismiss, and Add opens the event composer "
-            + "for you to check and choose a calendar. The message text leaves "
-            + "this window for the agent command."
-          color: root.dimColor
-          font.family: root.panelFontFamily
-          font.pixelSize: Style.font.caption
-          wrapMode: Text.WordWrap
-          textFormat: Text.PlainText
-        }
-      }
-
-      Text {
-        id: suggestState
-        objectName: "suggestEventsState"
-        anchors.right: suggestSwitch.left
-        anchors.rightMargin: Style.space(8)
-        anchors.verticalCenter: parent.verticalCenter
-        text: suggestSwitch.checked ? "On" : "Off"
-        color: root.dimColor
-        font.family: root.panelFontFamily
-        font.pixelSize: Style.font.caption
-      }
-
-      ToggleSwitch {
-        id: suggestSwitch
-        objectName: "suggestEventsSwitch"
-        anchors.right: parent.right
-        anchors.rightMargin: Style.space(10)
-        anchors.verticalCenter: parent.verticalCenter
-        checked: !!root.service && root.service.suggestEvents === true
-        foreground: root.textColor
-        accent: root.accentColor
-        onToggled: if (root.service) root.service.setSuggestEvents(!root.service.suggestEvents)
-      }
-    }
   }
 
   // ------------------------------------------------------------- mailboxes

@@ -13,7 +13,7 @@
 // follows it — a context that is not text entry parks the focus rather than
 // leaving it wherever the last click put it. Keeping those two as separate
 // things is what let a dismissed compose field go on eating j and k.
-var CONTEXTS = ["list", "reader", "search", "compose", "page", "calendar", "agent"]
+var CONTEXTS = ["list", "reader", "search", "compose", "page", "calendar", "assistant", "assistantCommands"]
 
 // Shorthands, so a row says where it lives rather than restating the set.
 var MAIL = ["list", "reader"]
@@ -78,7 +78,9 @@ var BINDINGS = [
   // "Move to" rather than "Move to a label" because the destination is a label
   // on Gmail and a folder on IMAP, and the sheet has no provider to ask.
   { id: "moveToLabel", keys: ["v"], contexts: MAIL,
-    group: "Acting", label: "Move to" },
+    group: "Acting", label: "Move to",
+    hint: { list: "move to", reader: "move to" },
+    hintNeedsSelection: true, hintUnavailableId: "move" },
   { id: "markRead", keys: ["Shift+I"], contexts: MAIL,
     group: "Acting", label: "Mark read" },
   { id: "markUnread", keys: ["Shift+U"], contexts: MAIL,
@@ -167,19 +169,24 @@ var BINDINGS = [
     group: "Going", label: "Switch account" },
   // The message agent, on the cursor row. A popup, so the same shape as the
   // account switcher: opened through the table, then answering its own keys.
-  { id: "askAgent", keys: ["Alt+G"], contexts: MAIL,
-    group: "Acting", label: "Ask the agent about the message" },
+  { id: "askAgent", keys: ["Alt+G"], contexts: ["list", "reader", "compose"],
+    group: "Acting", label: "Ask AI about the message or draft" },
+  { id: "assistantSend", keys: ["Return", "Enter", "Ctrl+Return", "Ctrl+Enter"], contexts: ["assistant", "assistantCommands"],
+    sequenceContexts: { "Return": ["assistant"], "Enter": ["assistant"] },
+    group: "AI", label: "Send the AI message" },
+  { id: "assistantCommandUp", keys: ["Up"], contexts: ["assistantCommands"],
+    group: "AI", label: "Previous AI command" },
+  { id: "assistantCommandDown", keys: ["Down"], contexts: ["assistantCommands"],
+    group: "AI", label: "Next AI command" },
+  { id: "assistantChooseCommand", keys: ["Return", "Enter"], contexts: ["assistantCommands"],
+    group: "AI", label: "Fill the selected AI command" },
 
   { id: "calendar", keys: ["Alt+C"], contexts: ["list", "reader", "calendar"],
     group: "Going", label: "Switch between mail and calendar" },
-  { id: "mailView", keys: ["Ctrl+Shift+M"], contexts: ["list", "reader", "calendar", "agent"],
+  { id: "mailView", keys: ["Ctrl+Shift+M"], contexts: ["list", "reader", "calendar"],
     group: "Going", label: "Go to mail" },
-  { id: "calendarView", keys: ["Ctrl+Shift+C"], contexts: ["list", "reader", "calendar", "agent"],
+  { id: "calendarView", keys: ["Ctrl+Shift+C"], contexts: ["list", "reader", "calendar"],
     group: "Going", label: "Go to calendar" },
-  // The agent pane is a text field first, so its context binds no bare key;
-  // this and the two above are how the keyboard gets in and out of it.
-  { id: "agentView", keys: ["Ctrl+Shift+G"], contexts: ["list", "reader", "calendar", "agent"],
-    group: "Going", label: "Go to the agent pane" },
   { id: "toggleSidebar", keys: ["["], contexts: ["list", "reader", "calendar"],
     group: "Going", label: "Show or hide the sidebar" },
 
@@ -212,11 +219,11 @@ var BINDINGS = [
 // the toast offers Alt+Z and its button.
 function contextFor(state) {
   var value = state || ({})
+  if (value.assistantEditing) return value.assistantCommands ? "assistantCommands" : "assistant"
   if (value.showPage) return "page"
   if (value.composing) return "compose"
   if (value.searchFocused) return "search"
   if (value.calendarVisible) return "calendar"
-  if (value.agentVisible) return "agent"
   if (value.currentView === "reader") return "reader"
   return "list"
 }
@@ -366,16 +373,19 @@ function helpGroups() {
 // What the status bar offers from where the user is standing.
 //
 // `unavailable` is the ids the active provider cannot honour — a mailbox with
-// no archive and no star should not be offering `e` and `s` in the row that
-// says what the keyboard does here. The table itself stays whole: what a key
-// means is a property of the application, and only whether it is on offer
-// depends on which mailbox is open.
-function hintsFor(context, unavailable) {
+// no archive, star, or named destination should not offer those actions in the
+// row that says what the keyboard does here. The table itself stays whole:
+// what a key means is a property of the application, and only whether it is on
+// offer depends on which mailbox is open. `hasSelection` makes the few hints
+// that act on a particular row contextual without changing their bindings.
+function hintsFor(context, unavailable, hasSelection) {
   var out = []
   var rows = bindingsFor(context)
   var missing = Array.isArray(unavailable) ? unavailable : []
   for (var i = 0; i < rows.length; i++) {
-    if (missing.indexOf(rows[i].id) >= 0) continue
+    if (rows[i].hintNeedsSelection && hasSelection !== true) continue
+    var unavailableId = rows[i].hintUnavailableId || rows[i].id
+    if (missing.indexOf(unavailableId) >= 0) continue
     var text = hintTextFor(rows[i], context)
     if (text !== "") out.push(({ key: hintKeyFor(rows[i]), label: text }))
   }
