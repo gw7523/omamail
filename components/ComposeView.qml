@@ -695,7 +695,16 @@ DropArea {
   function resumePendingSend(sendId, oldest) {
     var draft = takeParked(sendId, oldest === true)
     if (!draft) return false
-    if (opened) interruptedDraft = snapshotDraft()
+    if (opened) {
+      var displaced = snapshotDraft()
+      if (interruptedDraft) {
+        var queued = recoveryDrafts.slice()
+        queued.push(displaced)
+        recoveryDrafts = queued
+      } else {
+        interruptedDraft = displaced
+      }
+    }
     clearCurrentDraft(false)
     restoreDraft(draft)
     restoreRevision++

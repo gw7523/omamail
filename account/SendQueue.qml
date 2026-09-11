@@ -54,7 +54,6 @@ QtObject {
       return
     }
     var due = parked[0].dueAt
-    for (var i = 1; i < parked.length; i++) due = Math.min(due, parked[i].dueAt)
     delayTimer.interval = Math.max(1, due - Date.now())
     delayTimer.restart()
     if (!countdownTimer.running) countdownTimer.restart()
@@ -65,19 +64,12 @@ QtObject {
   function deliverDue() {
     if (account.sending || parked.length === 0) return false
     var now = Date.now()
-    var index = -1
-    for (var i = 0; i < parked.length; i++) {
-      if (parked[i].dueAt <= now) {
-        index = i
-        break
-      }
-    }
-    if (index < 0) {
+    if (parked[0].dueAt > now) {
       arm()
       return false
     }
     var next = parked.slice()
-    var entry = next.splice(index, 1)[0]
+    var entry = next.shift()
     parked = next
     arm()
     if (account.deliver(entry.payload)) return true

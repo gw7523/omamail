@@ -461,5 +461,22 @@ Item {
       compare(mailService.lastSavedDraft.subject, "Second subject")
       compare(mailService.lastSavedDraft.body, "Second message")
     }
+
+    function test_recovered_drafts_survive_a_subsequent_recovery_write() {
+      var compose = composeView()
+      app.open("{}")
+      app.startCompose("new")
+      named(compose, "compose-body-editor").text = "Current recovered draft"
+      compose.recoveryDrafts = [
+        { body: "Second recovered draft" },
+        { body: "Third recovered draft" }
+      ]
+
+      app.saveComposeRecovery()
+
+      compare(app.composeRecovery.parked.length, 2)
+      compare(app.composeRecovery.parked[0].body, "Second recovered draft")
+      compare(app.composeRecovery.parked[1].body, "Third recovered draft")
+    }
   }
 }

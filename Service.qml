@@ -1759,8 +1759,6 @@ Item {
     // and it would do it behind `App.switchAccount`'s back.
     if (host && host !== current && !unified) switchToIndex(index)
     replyFailed(String(sendId || ""))
-    if (host && host !== current) switchToIndex(index)
-    replyFailed(String(sendId || ""))
   }
 
   // ------------------------------------------------------------- instances

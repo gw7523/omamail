@@ -25,6 +25,12 @@ Item {
 
   Omamail.App { id: app; service: mailService }
 
+  SignalSpy {
+    id: failureSpy
+    target: mailService
+    signalName: "replyFailed"
+  }
+
   TestCase {
     name: "SendFailures"
     when: windowShown
@@ -104,6 +110,7 @@ Item {
     }
 
     function init() {
+      failureSpy.clear()
       stopSends()
       mailService.applySettings({ undoSendSeconds: 10 })
       resetApp()
@@ -186,6 +193,35 @@ Item {
       compare(mailService.accountAt(0).sendPending, true,
         "undoing the newest send leaves the older one parked")
       compare(compose.pendingDraft.body, "Ada's pending message")
+    }
+
+    function test_repeated_failures_preserve_every_parked_draft() {
+      var compose = composeView()
+      compose.parkedDrafts = [
+        { sendId: "send-1", draft: { body: "First" } },
+        { sendId: "send-2", draft: { body: "Second" } },
+        { sendId: "send-3", draft: { body: "Third" } }
+      ]
+
+      verify(compose.resumePendingSend("send-1", true))
+      verify(compose.resumePendingSend("send-2", true))
+      verify(compose.resumePendingSend("send-3", true))
+
+      compare(compose.snapshotDraft().body, "Third")
+      compare(compose.interruptedDraft.body, "First")
+      compare(compose.recoveryDrafts.length, 1)
+      compare(compose.recoveryDrafts[0].body, "Second")
+    }
+
+    function test_unified_failure_is_relayed_once_without_switching_account() {
+      seed([entry(ada), entry(bob)], adaId)
+      mailService.applySettings({ unifiedMailboxes: true, undoSendSeconds: 10 })
+      tryCompare(mailService, "unified", true)
+
+      mailService.forwardReplyFailure(1, "send-7")
+
+      compare(failureSpy.count, 1)
+      compare(mailService.activeAccountId, adaId)
     }
   }
 }

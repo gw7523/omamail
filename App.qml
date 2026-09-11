@@ -84,6 +84,10 @@ Item {
     for (var i = 0; i < parked.length; i++) {
       if (parked[i].draft !== draft) out.push(parked[i].draft)
     }
+    var recovered = compose.recoveryDrafts || []
+    for (var j = 0; j < recovered.length; j++) {
+      if (recovered[j] !== draft) out.push(recovered[j])
+    }
     return out
   }
 
