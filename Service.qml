@@ -47,8 +47,10 @@ Item {
 
   readonly property string pluginId: manifest && manifest.id
     ? String(manifest.id) : "omamail"
-  readonly property string pluginDir: manifest && manifest.__sourceDir
-    ? String(manifest.__sourceDir) : ""
+  // Modern Omarchy strips private manifest metadata for third-party plugins.
+  // Helpers belong beside this component, independently of host internals.
+  readonly property string pluginDir: decodeURIComponent(String(Qt.resolvedUrl("."))
+    .replace(/^file:\/\//, "")).replace(/\/$/, "")
   // Shown in the empty reader, so a screenshot in a bug report says which build
   // it came from. The shell's manifest validation requires both fields, so a
   // loaded plugin always has them; the fallbacks are for a harness that
@@ -65,9 +67,6 @@ Item {
     heavyMessageRendering: Html.HEAVY_MESSAGE_RENDERING_DEFAULT,
     contentDirection: Direction.MODE_DEFAULT,
     defaultQuery: "in:inbox",
-    agentCommand: "",
-    suggestEvents: false,
-    lookCommand: "",
     notifyNewMail: "On",
     oauthPort: 9481,
     undoSendSeconds: 10,
@@ -83,34 +82,10 @@ Item {
   readonly property bool alwaysRenderHeavyMessages: Html.alwaysRenderHeavyMessages(
     settings ? settings.heavyMessageRendering : null)
   readonly property bool notifyNewMail: String(settings ? settings.notifyNewMail : "On") !== "Off"
-  // The default agent's command line, or "" for no agent — in which case no
-  // agent button is drawn anywhere. docs/AGENT.md.
-  readonly property string agentCommand: String(settings ? settings.agentCommand || "" : "").trim()
-  readonly property bool hasAgent: Agent.hasAgent(agentCommand)
-  // Whether a message opened in the reader is handed to the agent to look
-  // for calendar events in. Off until the owner turns it on: the message
-  // text leaves the window for the agent command.
-  readonly property bool suggestEvents: !!settings && settings.suggestEvents === true
-  function setSuggestEvents(value) { persistSetting("suggestEvents", value === true) }
-  // What a look runs: the owner's own line for looks, or the default
-  // agent's preset at its cheapest model, or the default agent as it is.
-  readonly property string lookCommand: Agent.lookCommand(agentCommand, settings ? settings.lookCommand : "")
-  readonly property string lookCommandOwn: String(settings && settings.lookCommand ? settings.lookCommand : "").trim()
-  function setLookCommand(value) { persistSetting("lookCommand", String(value || "").trim()) }
-  readonly property bool agentStarting: agentRunner.starting
-  readonly property var eventSuggestions: eventSuggester.suggestions
-  function dismissSuggestion(key) { eventSuggester.dismiss(key) }
-  function addSuggestedEvent(suggestion) { return eventSuggester.compose(suggestion) }
-
-  // A look for events in the message an account is reading, started by the
-  // suggester once its gates are passed. Whose it is travels with it.
-  function startEventsJob(account, summary, text) {
-    if (!account || !summary || !hasAgent) return false
-    var id = String(summary.id || "")
-    var line = Agent.eventsPayload(summary, String(text || ""), account.accountEmail,
-      Agent.folderOf(id, account.mailboxKey, account.providerId), lookCommand, account.accountId)
-    return agentRunner.start(line)
-  }
+  // System AI is always reachable. The launcher explains missing setup.
+  readonly property bool hasAgent: true
+  readonly property string agentError: agentContext.error !== "" ? agentContext.error : agentRunner.lastError
+  readonly property bool agentStarting: agentContext.busy || agentRunner.starting
   // The open account's jobs by message id — another account's job about
   // the same id is not this row's, however the id reads.
   readonly property var agentJobs: agentRunner.byMessage
@@ -118,32 +93,44 @@ Item {
   // agent buttons pulse for. Opening a job's popup or card is what stops it.
   readonly property bool agentAttention: agentRunner.attention
   readonly property var agentAttentionByMessage: agentRunner.attentionByMessage
+  function agentJobWantsAttention(job) { return Agent.wantsAttention(job, agentRunner.seenIds) }
   function acknowledgeAgentJob(jobId) { agentRunner.acknowledge(jobId) }
   readonly property bool agentBusy: agentRunner.anyActive
 
   function agentJobFor(messageId, accountId) {
     var target = agentTarget(messageId, accountId)
-    return target.owner ? agentRunner.jobFor(target.id, target.owner.accountId) : null
+    return target.owner ? Agent.selectionJob(agentRunner.jobs, [target.id], target.owner.accountId) : null
   }
 
-  // Which harness binaries are on PATH, so Settings can say which presets
-  // will actually run. Looked up once per service; a newly installed CLI
-  // shows up after the next shell restart, which is when PATH changes anyway.
-  property var agentToolsFound: []
-  readonly property var agentPresetOptions: Agent.presetOptions(agentToolsFound)
-
-  function findAgentTools() {
-    if (agentToolFinder.running) return
-    var names = Agent.presetBinaries()
-    var script = ""
-    for (var i = 0; i < names.length; i++) script += "command -v " + names[i] + " 2>/dev/null; "
-    agentToolFinder.command = ["/bin/sh", "-c", script]
-    agentToolFinder.running = true
+  function agentHistoryFor(fields, ids, accountId) {
+    if (fields && fields.draftKey) {
+      var sender = sendHostFor(fields)
+      return sender ? Agent.historyFor(agentRunner.jobs, sender.accountId, [], fields.draftKey) : []
+    }
+    if (!ids || !ids.length) return []
+    var target = agentTarget(ids[0], accountId)
+    if (!target.owner) return []
+    var own = []
+    for (var i = 0; i < ids.length; i++) {
+      var item = agentTarget(ids[i], accountId)
+      if (item.owner !== target.owner) return []
+      own.push(item.id)
+    }
+    return Agent.historyFor(agentRunner.jobs, target.owner.accountId, own, "")
   }
 
-  // The message as the list knows it plus the text the reader has, handed to
-  // the runner on one line. The body is only there when the message is the
-  // open one; the agent can read the rest itself.
+  function agentSelectionJob(ids, accountId) {
+    var target = ids && ids.length ? agentTarget(ids[0], accountId) : null
+    if (!target || !target.owner) return null
+    var own = []
+    for (var i = 0; i < ids.length; i++) {
+      var item = agentTarget(ids[i], accountId)
+      if (item.owner !== target.owner) return null
+      own.push(item.id)
+    }
+    return Agent.selectionJob(agentRunner.jobs, own, target.owner.accountId)
+  }
+
   // Whose message an ask or a cancel is about: the account the popup was
   // opened on, by id, or the one a unified row's id names — never simply
   // the account open when the answer arrives, which may hold a different
@@ -152,7 +139,10 @@ Item {
     var id = String(accountId || "")
     if (id === "") return current
     var owner = findAccount(id)
-    if (!owner && current) current.fail("That mailbox is no longer set up, so the agent was not asked")
+    if (!owner) {
+      agentContext.error = "That mailbox is no longer set up, so AI was not asked."
+      if (current) current.fail(agentContext.error)
+    }
     return owner
   }
 
@@ -165,52 +155,29 @@ Item {
   }
 
   function askAgent(messageId, prompt, accountId) {
-    if (!hasAgent) return false
     var target = agentTarget(messageId, accountId)
-    var owner = target.owner
-    var id = target.id
-    if (!owner) return false
-    var index = Model.indexById(owner.messages, id)
-    var summary = index >= 0 ? owner.messages[index]
-      : (owner.selectedId === id ? owner.selectedMessage : null)
-    if (!summary) return false
-    var body = owner.selectedId === id && owner.selectedBody ? String(owner.selectedBody.text || "") : ""
-    var line = Agent.payload(summary, body, owner.accountEmail,
-      Agent.folderOf(id, owner.mailboxKey, owner.providerId), agentCommand, prompt, owner.accountId)
-    if (!agentRunner.start(line)) return false
-    owner.note("Asked the agent")
-    return true
+    if (!target.owner || target.id === "") return false
+    return agentContext.request(target.owner, [target.id], prompt)
   }
 
-  // The pane's jobs and the one it is reading, forwarded so a view never
+  // Contextual results, forwarded so a view never
   // reaches past `service`.
-  readonly property var agentPaneJobs: agentRunner.jobs
+  readonly property var agentAllJobs: agentRunner.jobs
   readonly property string agentShownId: agentRunner.shownId
   readonly property string agentShownOutput: agentRunner.shownOutput
+  readonly property var agentShownTranscript: agentRunner.shownTranscript
 
   function showAgentJob(jobId) { agentRunner.show(jobId) }
-
-  // An ask across the open account, or every account. No message crosses;
-  // the agent is told the addresses and does its own reading.
-  function askAgentScope(prompt, everyAccount) {
-    if (!current || !hasAgent) return false
-    var addresses = []
-    var list = sendIdentities || []
-    for (var i = 0; i < list.length; i++) if (list[i].email) addresses.push(String(list[i].email))
-    var scope = Agent.scopeOf(everyAccount === true, current.accountEmail)
-    var line = Agent.scopePayload(prompt, scope, current.accountEmail, addresses, agentCommand, current.accountId)
-    if (!agentRunner.start(line)) return false
-    return true
-  }
 
   // The answer to a question, or a follow-up: a new job that continues the
   // one named, with the runner rebuilding the prompt from it.
   function answerAgent(jobId, answer) {
     if (!hasAgent) return false
     var job = agentRunner.jobFor2(jobId)
-    if (!job || String(answer || "").trim() === "") return false
-    if (!agentRunner.start(Agent.continuationPayload(job, answer, agentCommand))) return false
-    if (current) current.note("Answered the agent")
+    if (!job || !job.canContinue || Agent.isActive(job) || !findAccount(job.accountId)
+        || String(answer || "").trim() === "") return false
+    agentContext.error = ""
+    if (!agentRunner.start(Agent.continuationPayload(job, answer))) return false
     return true
   }
 
@@ -226,32 +193,31 @@ Item {
       var target = agentTarget(list[i], accountId)
       if (!target.owner) return false
       if (owner && target.owner !== owner) {
-        owner.fail("Hand the agent messages from one mailbox at a time")
+        agentContext.error = "Select messages from one mailbox at a time."
+        owner.fail(agentContext.error)
         return false
       }
       owner = target.owner
       own.push(target.id)
     }
     if (!owner) return false
-    var summaries = Model.summariesById(owner.messages, own)
-    if (summaries.length === 0) return false
-    var line = Agent.selectionPayload(summaries, owner.accountEmail, owner.mailboxKey, agentCommand, prompt, owner.accountId)
-    if (!agentRunner.start(line)) return false
-    owner.note("Asked the agent about " + Agent.pluralizeMessages(summaries.length))
-    return true
+    return agentContext.request(owner, own, prompt)
   }
 
   function forgetAgentJob(jobId) { return agentRunner.forget(jobId) }
   function forgetFinishedAgentJobs() { return agentRunner.forgetFinished() }
 
   // The composer's asks: the draft as it stands and what to do with it.
-  readonly property var agentDraftJobs: Agent.draftJobs(agentRunner.jobs, current ? current.accountId : "")
+  function agentJobsForDraft(fields) {
+    var owner = sendHostFor(fields)
+    return owner ? Agent.draftJobs(agentRunner.jobs, owner.accountId, fields.draftKey) : []
+  }
 
   function askAgentDraft(fields, ask) {
-    if (!current || !hasAgent) return false
-    var line = Agent.draftPayload(fields, ask, current.accountEmail, agentCommand, current.accountId)
-    if (!agentRunner.start(line)) return false
-    return true
+    var owner = sendHostFor(fields)
+    if (!owner || !fields || !fields.draftKey || String(ask || "").trim() === "") return false
+    agentContext.error = ""
+    return agentRunner.start(Agent.draftPayload(fields, ask, owner.accountEmail, owner.accountId))
   }
 
   function cancelAgentJob(jobId) {
@@ -264,7 +230,7 @@ Item {
     var target = agentTarget(messageId, accountId)
     if (!target.owner) return false
     if (!agentRunner.cancel(target.id, target.owner.accountId)) return false
-    target.owner.note("Cancelling the agent's actions")
+    target.owner.note("Stopping AI")
     return true
   }
 
@@ -371,9 +337,6 @@ Item {
   }
 
   // The default agent's command line, from Settings. Empty is no agent.
-  function setAgentCommand(value) {
-    persistSetting("agentCommand", String(value || "").trim())
-  }
 
   function setShowBarIcon(value) {
     persistSetting("showBarIcon", value === true)
@@ -1496,11 +1459,15 @@ Item {
   }
   readonly property bool sending: !!sendingHost
   readonly property var pendingSendHost: {
+    var newest = null
     for (var i = 0; i < accountHosts.count; i++) {
       var host = accountHosts.objectAt(i)
-      if (host && host.sendPending) return host
+      if (!host || !host.sendPending) continue
+      if (!newest || host.latestSend.order > newest.latestSend.order
+          || (host.latestSend.order === newest.latestSend.order
+            && host.latestSend.queuedAt > newest.latestSend.queuedAt)) newest = host
     }
-    return null
+    return newest
   }
   readonly property bool sendPending: !!pendingSendHost
   readonly property int sendSecondsRemaining: pendingSendHost
@@ -1526,6 +1493,42 @@ Item {
     }
     return newest
   }
+  readonly property int sendPendingCount: {
+    var total = 0
+    for (var i = 0; i < accountHosts.count; i++) {
+      var host = accountHosts.objectAt(i)
+      if (host) total += host.sendPendingCount
+    }
+    return total
+  }
+  readonly property int sendingCount: {
+    var total = 0
+    for (var i = 0; i < accountHosts.count; i++) {
+      var host = accountHosts.objectAt(i)
+      if (host && host.sending) total += 1
+    }
+    return total
+  }
+  readonly property int runningActionCount: {
+    var total = 0
+    for (var i = 0; i < accountHosts.count; i++) {
+      var host = accountHosts.objectAt(i)
+      if (host && host.pendingAction !== "") total += 1
+    }
+    return total
+  }
+  readonly property int queuedActionCount: {
+    var total = 0
+    for (var i = 0; i < accountHosts.count; i++) {
+      var host = accountHosts.objectAt(i)
+      if (host) total += host.queuedActions.length
+    }
+    return total
+  }
+  readonly property string activityStatus: Model.activityStatus({
+    sending: sendingCount, queuedSends: sendPendingCount,
+    running: runningActionCount, waiting: queuedActionCount
+  })
   readonly property string signInProgress: current ? current.signInProgress : ""
   // Whether the mailbox on screen has had its credential refused. The setup
   // page draws the re-entry card from this; nothing signs out over it.
@@ -1706,23 +1709,15 @@ Item {
   // `sendIdentities` spans every account and carries the id, so a unified
   // view needed the routing rather than a new question.
   function send(fields) {
-    // The button has the same guard, but Ctrl+Return reaches this function
-    // directly. Enforce the one-global-parked-draft invariant at the action
-    // boundary so another account cannot overwrite it.
-    if (pendingSendHost) {
-      if (current) current.fail("Another message is waiting to be sent")
-      return false
-    }
-    if (sendingHost) {
-      if (current) current.fail("Another message is still being sent")
-      return false
-    }
     // The mailbox the From address belongs to. `sendIdentities` spans every
     // account and carries the id, so compose can already name one; this is the
     // routing it was missing.
     var values = fields || ({})
     var host = sendHostFor(values)
-    return host ? host.send(withSignatures(withSourceDraftId(values), host)) : false
+    if (!host) return false
+    sendSequence += 1
+    return host.send(withSignatures(withSourceDraftId(values), host),
+      "send-" + sendSequence, sendSequence)
   }
 
   // The mailbox a submission is sent from.
@@ -1804,6 +1799,8 @@ Item {
     values.signatureHtml = entry ? String(entry.signatureHtml || "") : ""
     return values
   }
+
+  property int sendSequence: 0
 
   function saveDraft(fields, callback) {
     var values = fields || ({})
@@ -1993,13 +1990,13 @@ Item {
     callback("", "The Google calendar account is not signed in")
   }
 
-  signal replySent()
-  signal replyFailed()
+  signal replySent(string sendId)
+  signal replyFailed(string sendId)
 
   // A queued send keeps running on its own account when the visible mailbox
   // changes. Put that account back in front before App restores the draft, so
   // a retry cannot be addressed to whichever mailbox happened to be visible.
-  function forwardReplyFailure(index) {
+  function forwardReplyFailure(index, sendId) {
     var host = accountAt(index)
     // Not in a merged list. The switch exists so a retry cannot be addressed
     // to whichever mailbox happened to be visible, and in a merged view the
@@ -2008,7 +2005,7 @@ Item {
     // the combined view to report a failure, which is not what was asked for,
     // and it would do it behind `App.switchAccount`'s back.
     if (host && host !== current && !unified) switchToIndex(index)
-    replyFailed()
+    replyFailed(String(sendId || ""))
   }
 
   // ------------------------------------------------------------- instances
@@ -2091,8 +2088,8 @@ Item {
       onServerSettingsLearned: function(jmap) { root.configureAccount(index, { jmap: jmap }) }
       onReadyChanged: root.recount()
       onInboxUnreadChanged: root.recount()
-      onReplySent: root.replySent()
-      onReplyFailed: root.forwardReplyFailure(index)
+      onReplySent: function(sendId) { root.replySent(String(sendId || "")) }
+      onReplyFailed: function(sendId) { root.forwardReplyFailure(index, sendId) }
       onMonitoredMigrated: function(ids) { root.setMonitoredIds(index, ids) }
 
       // What a merged list is made of, and everything a merged list says
@@ -2138,16 +2135,10 @@ Item {
     onTriggered: root.reopenWindow()
   }
 
-  Process {
-    id: agentToolFinder
-    stdout: StdioCollector { waitForEnd: true }
-    stderr: StdioCollector { waitForEnd: true }
-    onExited: root.agentToolsFound = Agent.foundBinaries(String(stdout.text || ""))
-  }
-
-  EventSuggester {
-    id: eventSuggester
+  AgentContext {
+    id: agentContext
     service: root
+    runner: agentRunner
   }
 
   AgentRunner {
@@ -2229,7 +2220,6 @@ Item {
   }
 
   Component.onCompleted: {
-    Qt.callLater(root.findAgentTools)
     Qt.callLater(root.refreshRecipientContacts)
     Qt.callLater(root.registerMailtoHandler)
   }

@@ -11,9 +11,7 @@ function frozen(stack) {
 
 // ------------------------------------------------------------------- shape
 
-deepEqual(nav.ROOTS, ["list", "calendar", "agent"])
-deepEqual(nav.rootFor({ anyReady: true, view: "agent" }), [{ kind: "agent" }])
-deepEqual(nav.replaceRoot([nav.entry("reader", { id: "1" })], "agent"), [{ kind: "agent" }])
+deepEqual(nav.ROOTS, ["list", "calendar"])
 deepEqual(nav.OVERLAYS, ["compose", "eventComposer", "help"])
 
 deepEqual(nav.entry("reader", { id: "m1" }), { id: "m1", kind: "reader" })

@@ -241,8 +241,23 @@ function normalizeSettings(raw) {
     // Loopback only. A plaintext session to anywhere else is a password on the
     // wire, and the one legitimate case — a local bridge — never leaves the
     // machine.
-    insecure: values.insecure === true && isLoopback(values.imapHost)
+    insecure: values.insecure === true && isLoopback(values.imapHost),
+    send: normalizeSend(values.send)
   }
+}
+
+// How a message leaves: SMTP, or Microsoft Graph's sendMail for a Microsoft
+// 365 tenant that has switched authenticated SMTP off. Graph takes the same
+// MIME the SMTP path builds and files the sent copy itself. Empty or missing
+// is SMTP, which is what every mailbox already on disk means.
+var GRAPH_SEND_URL = "https://graph.microsoft.com/v1.0/me/sendMail"
+
+function normalizeSend(value) {
+  return trimmed(value).toLowerCase() === "graph" ? "graph" : ""
+}
+
+function sendsViaGraph(raw) {
+  return normalizeSend((raw || {}).send) === "graph"
 }
 
 function isLoopback(host) {
@@ -263,7 +278,8 @@ function setupSettings(raw) {
     smtpPort: values.smtpPort,
     username: trimmed(values.username) || trimmed(values.address),
     aliases: values.aliases,
-    insecure: isLoopback(values.imapHost)
+    insecure: isLoopback(values.imapHost),
+    send: values.send
   })
 }
 
@@ -1090,16 +1106,31 @@ function encodeMailbox(name) {
 // name again turns its "&" into "&-" and names a folder that does not exist.
 // A RENAME carries every folder beneath the old name with it, which is what
 // moving a folder under another parent is.
+// Refuse an unrepresentable identity before quoting or encoding can change it.
+function validFolderName(value) {
+  var text = String(value === undefined || value === null ? "" : value)
+  if (text === "" || /[\x00-\x1f\x7f]/.test(text)) return false
+  for (var i = 0; i < text.length; i++) {
+    var code = text.charCodeAt(i)
+    if (code >= 0xd800 && code <= 0xdbff) {
+      var next = text.charCodeAt(++i)
+      if (!(next >= 0xdc00 && next <= 0xdfff)) return false
+    } else if (code >= 0xdc00 && code <= 0xdfff) return false
+  }
+  return true
+}
+
 function createCommand(name) {
-  return "CREATE " + quote(encodeMailbox(name))
+  return validFolderName(name) ? "CREATE " + quote(encodeMailbox(name)) : ""
 }
 
 function renameCommand(fromWire, toName) {
+  if (!validFolderName(fromWire) || !validFolderName(toName)) return ""
   return "RENAME " + quote(fromWire) + " " + quote(encodeMailbox(toName))
 }
 
 function deleteCommand(wireName) {
-  return "DELETE " + quote(wireName)
+  return validFolderName(wireName) ? "DELETE " + quote(wireName) : ""
 }
 
 // The SPECIAL-USE attributes this plugin cares about, mapped to the folder the
