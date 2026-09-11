@@ -95,7 +95,10 @@ Item {
     function test_a_short_page_is_followed_until_the_foot_is_out_of_view() {
       // A first page shorter than the view: the foot is in view at rest,
       // and the next page is asked for a moment after the list settles.
+      fakeService.hasMore = false
+      fakeService.messages = []
       fakeService.listLoading = true
+      fakeService.hasMore = true
       fakeService.messages = [row("1:INBOX"), row("2:INBOX")]
       wait(30)
       verify(flick.contentHeight <= flick.height, "shorter than the view")
