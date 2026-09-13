@@ -60,10 +60,19 @@ calendar's event composer with the fields filled in, so the owner chooses the
 calendar and looks the times over before anything is written; a written event
 waves its suggestion away, a dismissed one stays away for the session.
 
-The gates are local and cheap: the setting, a date in the subject or the text
-(`Agent.mentionsDate`, generous on purpose), a message from the last two months
-(one with no known date is not looked at), no look at that message yet, and at
-most two looks running at once; a look that cannot start yet waits its turn. A
+The gates are local and cheap, and they come before the model, because a
+look is a model call with the whole message in it: the setting; a message
+from a person rather than a machine or a list — `Agent.automatedMail` reads
+the sender (`noreply`, `notifications@`, `mailer-daemon`, a newsletter or
+alerts address) and Gmail's Promotions, Updates, Forums and Social
+categories off the row, and the reader knows a list by its List-Unsubscribe
+header; a time or a date in the subject or the text (`Agent.mentionsDate`: a
+clock time, a month with a day, a numeric date, "tomorrow", or a weekday
+bound to a plan like "on Thursday" — a bare "Sunday" in prose is a word);
+a message from the last two months (one with no known date is not looked
+at); no look at that message yet; and at most two looks running at once — a
+look that cannot start yet waits its turn. The worker sends at most the
+first 8,000 characters of the message. A
 look is a job started through the same account-bound `agent.context` read as an
 ask, with `events: true` on the payload; Rust records it with kind `events`.
 It is a background job — no row glyph, no glow, no place in the dock's history,

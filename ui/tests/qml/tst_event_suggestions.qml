@@ -88,9 +88,10 @@ Item {
         label: "", signature: ""
       }
     }
-    function summary(id, subject) {
+    function summary(id, subject, from, labels) {
       return ({ id: id, threadId: "", subject: subject, snippet: "", time: "", date: new Date().toISOString(),
-        from: { email: "bob@example.com", display: "Bob" }, unread: false, starred: false, inInbox: true, labelIds: ["INBOX"] })
+        from: { email: from || "bob@example.com", display: "Bob" }, unread: false, starred: false, inInbox: true,
+        labelIds: labels || ["INBOX"] })
     }
     function runner() {
       var kids = mailService.children
@@ -151,9 +152,9 @@ Item {
       setJobs([])
       return agent
     }
-    function open(account, id, subject, text) {
+    function open(account, id, subject, text, from, labels) {
       account.selectedId = id
-      account.selectedMessage = summary(id, subject)
+      account.selectedMessage = summary(id, subject, from, labels)
       account.selectedBody = ({ text: text, source: "" })
     }
     function lastStart() {
@@ -204,6 +205,19 @@ Item {
       open(adas, "46:INBOX", "Dinner Thursday at 7pm at Luigi's", "see you there")
       compare(lastStart().messageId, "46:INBOX", "the subject counts")
       tryCompare(agent, "starting", false)
+
+      // Mail from a machine, a Gmail category, or a list is not asked
+      // about, however many dates it carries: the filter comes before the
+      // model, and these cost nothing.
+      bridge.starts = []
+      open(adas, "47:INBOX", "Run failed: nightly", "Run failed at 14:30 on Sep 12", "notifications@github.com")
+      open(adas, "48:INBOX", "Sale ends Sep 30", "Only until Sep 30 at 23:59!", "bob@example.com", ["INBOX", "CATEGORY_PROMOTIONS"])
+      adas.selectedUnsubscribe = ({ url: "https://list.example/leave" })
+      open(adas, "49:INBOX", "Meetup Thursday at 7pm", "Join us on Thursday at 7pm", "bob@example.com")
+      adas.selectedUnsubscribe = null
+      wait(20)
+      compare(bridge.starts.length, 0, "no look at a notification, a promotion or a list")
+      compare(contexts.length, 3, "and none of them was read either")
 
       // The look is on the list now; opening the message again asks nothing.
       setJobs([look("look-44", ada, "44:INBOX", "running")])

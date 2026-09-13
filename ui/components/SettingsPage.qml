@@ -550,11 +550,13 @@ Column {
 
       Text {
         width: parent.width
-        text: "A message you open that mentions a date is handed to the AI once, "
-          + "in the background; the events it finds show above the message with "
-          + "Add and Dismiss, and Add opens the event composer for you to check "
-          + "and choose a calendar. The message text leaves this window for the "
-          + "system AI."
+        text: "Uses the system AI. A message from a person that names a time or "
+          + "a date is handed to it once when you open the message, in the "
+          + "background — notifications, newsletters and lists are not. Each "
+          + "look is one AI call and spends tokens on your account. What it "
+          + "finds folds into a line above the message, with Add and Dismiss; "
+          + "Add opens the event composer for you to check and choose a "
+          + "calendar. The message text leaves this window for the AI."
         color: root.dimColor
         font.family: root.panelFontFamily
         font.pixelSize: Style.font.caption

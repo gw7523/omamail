@@ -114,10 +114,25 @@ assert.equal(a.pendingLimit(['one'], 'two'),'')
   // The prefilter: a date or a time in the text, by name, number or
   // relation; not a word that only looks like one.
   const yes = ["See you Thursday at 3pm", "Dinner on 12 September", "Sep 12 works for me", "12/09/2026 at the office",
-    "2026-09-12", "call at 14:30", "tomorrow morning", "next week then", "May 12 works", "on Thu, then"]
-  const no = ["I may go", "he sat down and thought", "the sun was out", "no dates in here", "", "march on", "a dec in the code"]
+    "2026-09-12", "call at 14:30", "tomorrow morning", "next week then", "May 12 works", "on Thu, then", "Dinner on Thursday?",
+    "Friday evening?", "by Monday please"]
+  const no = ["I may go", "he sat down and thought", "the sun was out", "no dates in here", "", "march on", "a dec in the code",
+    "Sunday was lovely", "the September issue", "Thursday", "every day in May"]
   for (const text of yes) assert.strictEqual(a.mentionsDate(text), true, text)
   for (const text of no) assert.strictEqual(a.mentionsDate(text), false, text)
+
+  // Mail from a machine or a list is never worth a model call.
+  const person = { from: { email: "bob@example.com" }, labelIds: ["INBOX"] }
+  assert.strictEqual(a.automatedMail(person), false)
+  for (const email of ["noreply@github.com", "no-reply@email.claude.com", "notifications@github.com", "serviceinfo@dbs.com",
+    "mailer-daemon@example.com", "alerts@bank.example", "newsletter@shop.example", "bounces+1@list.example", "donotreply@x.y"])
+    assert.strictEqual(a.automatedMail({ from: { email: email } }), email.indexOf("serviceinfo") < 0, email)
+  assert.strictEqual(a.automatedMail({ from: { email: "bob@example.com" }, labelIds: ["INBOX", "CATEGORY_PROMOTIONS"] }), true, "filed by Gmail already")
+  assert.strictEqual(a.automatedMail({}), false)
+  assert.strictEqual(a.worthALook(person, "Dinner Thursday at 7pm?", false), true)
+  assert.strictEqual(a.worthALook(person, "Dinner Thursday at 7pm?", true), false, "a list is a list, whoever signs it")
+  assert.strictEqual(a.worthALook({ from: { email: "noreply@github.com" } }, "Run failed at 14:30", false), false)
+  assert.strictEqual(a.worthALook(person, "see you there", false), false)
 
   const now = Date.parse("2026-09-07T12:00:00Z")
   assert.strictEqual(a.tooOldForEvents(now - 3 * 86400000, now), false)

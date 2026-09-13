@@ -245,23 +245,21 @@ function isEventsJob(job) {
   return !!job && String(job.kind || "") === "events"
 }
 
-// Whether the text mentions a date or a time at all: a month or weekday by
-// name, a numeric date, a clock time, or a day said relative to today.
-// Generous on purpose, and cheap — it decides only whether the agent is
-// worth asking. "May" and "March" alone are words; with a day number they
-// are dates, and the short forms are read only beside a number.
-var MONTHS = "january|february|april|june|july|august|september|october|november|december"
+// Whether the text says when: a clock time, a month with a day, a numeric
+// date, a day said relative to today, or a weekday bound to a plan ("on
+// Thursday", "next Fri"). Cheap, and it decides only whether the agent is
+// worth asking — but not generous: a look costs a model call with the whole
+// message in it, and a bare "May", "March" or "Sunday" in running prose is
+// a word, not a plan. The short forms are read only beside a number.
 var MONTH_ANY = "january|february|march|april|may|june|july|august|september|october|november|december"
   + "|jan|feb|mar|apr|jun|jul|aug|sep|sept|oct|nov|dec"
-var DAYS = "monday|tuesday|wednesday|thursday|friday|saturday|sunday"
-var DAY_ABBR = "mon|tue|tues|wed|thu|thur|thurs|fri|sat|sun"
+var DAY_ANY = "monday|tuesday|wednesday|thursday|friday|saturday|sunday"
+  + "|mon|tue|tues|wed|thu|thur|thurs|fri|sat|sun"
 var DATE_HINTS = [
-  new RegExp("\\b(" + MONTHS + ")\\b", "i"),
   new RegExp("\\b(" + MONTH_ANY + ")\\.?\\s+\\d{1,2}\\b", "i"),
   new RegExp("\\b\\d{1,2}(st|nd|rd|th)?\\s+(" + MONTH_ANY + ")\\b", "i"),
-  new RegExp("\\b(" + DAYS + ")\\b", "i"),
-  new RegExp("\\b(on|next|this|every|by)\\s+(" + DAY_ABBR + ")\\b", "i"),
-  new RegExp("\\b(" + DAY_ABBR + ")\\.?,?\\s+\\d{1,2}\\b", "i"),
+  new RegExp("\\b(on|next|this|every|by|until|till|before)\\s+(" + DAY_ANY + ")\\b", "i"),
+  new RegExp("\\b(" + DAY_ANY + ")\\.?,?\\s+(\\d{1,2}\\b|at\\b|morning|afternoon|evening|night)", "i"),
   /\b\d{1,2}[\/.-]\d{1,2}[\/.-]\d{2,4}\b/,
   /\b\d{4}-\d{2}-\d{2}\b/,
   /\b\d{1,2}:\d{2}\b/,
@@ -273,6 +271,30 @@ function mentionsDate(text) {
   if (value === "") return false
   for (var i = 0; i < DATE_HINTS.length; i++) if (DATE_HINTS[i].test(value)) return true
   return false
+}
+
+// Mail no person wrote to the owner: a notification, a bounce, a newsletter,
+// a list — or one Gmail already filed under a category. A bank's notice
+// and a CI run both mention dates, and neither is asking the owner to
+// dinner; a look at them is a model call for `[]`. Read from what the row
+// already carries, so it costs nothing.
+var AUTOMATED_LOCAL = /^(no-?reply|noreply|do-?not-?reply|donotreply|mailer-daemon|postmaster|bounces?|notifications?|alerts?|newsletters?|digests?|updates?|news|info|marketing|support|billing|receipts?|orders?)([@.+_-]|$)/i
+var AUTOMATED_WITHIN = /(no-?reply|donotreply|do-not-reply|notifications?@|mailer-daemon|bounce)/i
+var CATEGORY_LABELS = ["CATEGORY_PROMOTIONS", "CATEGORY_UPDATES", "CATEGORY_FORUMS", "CATEGORY_SOCIAL"]
+function automatedMail(summary) {
+  var row = summary || {}
+  var email = String(row.from && row.from.email ? row.from.email : "").trim().toLowerCase()
+  if (AUTOMATED_LOCAL.test(email) || AUTOMATED_WITHIN.test(email)) return true
+  var labels = Array.isArray(row.labelIds) ? row.labelIds : []
+  for (var i = 0; i < labels.length; i++) if (CATEGORY_LABELS.indexOf(String(labels[i])) >= 0) return true
+  return false
+}
+
+// The whole gate before the model: mail from a person, not from a list —
+// the reader knows a list by its List-Unsubscribe header — that says when.
+function worthALook(summary, text, listMail) {
+  if (listMail === true || automatedMail(summary)) return false
+  return mentionsDate(text)
 }
 
 // A message from two months ago is about events that have passed; the

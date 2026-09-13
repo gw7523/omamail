@@ -74,10 +74,11 @@ Item {
     var summary = account.selectedMessage
     if (id === "" || !summary || String(summary.id || "") !== id) return false
     // The subject counts: "Dinner Thursday at 7pm" over a body that says
-    // only "see you there" is a message about a date.
+    // only "see you there" is a message about a date. Mail from a machine
+    // or a list is not asked about, however many dates it carries.
     var text = String(summary.subject || "") + "\n"
       + (account.selectedBody ? String(account.selectedBody.text || "") : "")
-    if (!Agent.mentionsDate(text)) return false
+    if (!Agent.worthALook(summary, text, !!account.selectedUnsubscribe)) return false
     if (Agent.tooOldForEvents(Unified.messageTime(summary), Date.now())) return false
     var key = String(account.accountId || "") + " " + id
     if (started.indexOf(key) >= 0 || lookedAt(account.accountId, id)) return false
