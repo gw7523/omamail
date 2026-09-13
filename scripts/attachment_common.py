@@ -9,6 +9,7 @@ be fixed once.
 
 import base64
 import os
+import unicodedata
 
 # A name longer than this is refused by ext4 and by every filesystem the app is
 # likely to land on, which measures bytes rather than characters.
@@ -23,6 +24,67 @@ def decode(value: bytes) -> bytes:
     compact = b"".join(value.split())
     compact += b"=" * (-len(compact) % 4)
     return base64.b64decode(compact, altchars=b"-_", validate=True)
+
+
+# Opening these hands the desktop a document that can run code or fetch
+# further resources. Saving them is still allowed; opening them is not.
+OPEN_REFUSED_SUFFIXES = (
+    ".html", ".htm", ".xhtml", ".shtml",
+    ".svg", ".svgz",
+    ".xml",
+    ".desktop", ".url", ".lnk",
+    ".js", ".mjs", ".cjs",
+    ".hta",
+    ".exe", ".bat", ".cmd", ".com", ".msi", ".scr",
+    ".sh", ".bash", ".zsh",
+    ".ps1", ".vbs", ".vbe", ".wsf", ".wsh",
+)
+
+
+def openable_filename(name: str) -> bool:
+    normalized = unicodedata.normalize("NFKC", str(name)).replace("\u2024", ".")
+    cleaned = "".join(
+        character for character in normalized
+        if unicodedata.category(character) not in ("Cf", "Cc", "Zl", "Zp")
+    )
+    lowered = cleaned.rstrip("._ \t").lower()
+    return not any(lowered.endswith(suffix) for suffix in OPEN_REFUSED_SUFFIXES)
+
+
+ACTIVE_BINARY_PREFIXES = (
+    b"MZ", b"\x7fELF",
+    b"\xfe\xed\xfa\xce", b"\xfe\xed\xfa\xcf",
+    b"\xce\xfa\xed\xfe", b"\xcf\xfa\xed\xfe",
+    b"\xca\xfe\xba\xbe", b"\xbe\xba\xfe\xca",
+    b"L\x00\x00\x00\x01\x14\x02\x00",
+)
+
+ACTIVE_TEXT_MARKERS = (
+    b"<!doctype", b"<html", b"<head", b"<body", b"<script",
+    b"<iframe", b"<meta", b"<svg", b"<?xml", b"[desktop entry]",
+)
+
+
+def openable_attachment(name: str, data: bytes) -> bool:
+    """Whether neither the sender's name nor the bytes describe active content."""
+    if not openable_filename(name):
+        return False
+    content = bytes(data)
+    if content.startswith(ACTIVE_BINARY_PREFIXES):
+        return False
+
+    sample = content[:65536]
+    if sample.startswith(b"\xef\xbb\xbf"):
+        sample = sample[3:]
+    elif sample.startswith((b"\xff\xfe", b"\xfe\xff")):
+        try:
+            sample = sample.decode("utf-16").encode("utf-8")
+        except UnicodeError:
+            return False
+    folded = sample.replace(b"\x00", b"").lstrip().lower()
+    if folded.startswith(b"#!"):
+        return False
+    return not any(marker in folded for marker in ACTIVE_TEXT_MARKERS)
 
 
 def safe_filename(value: bytes) -> str:

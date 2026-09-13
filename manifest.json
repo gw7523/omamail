@@ -2,7 +2,7 @@
   "schemaVersion": 1,
   "id": "omamail",
   "name": "Omamail",
-  "version": "0.8.2",
+  "version": "0.9.0",
   "author": "huacnlee",
   "license": "MIT",
   "homepage": "https://huacnlee.github.io/omamail/",
@@ -14,9 +14,9 @@
   ],
   "activation": "on-demand",
   "entryPoints": {
-    "service": "Service.qml",
-    "barWidget": "BarWidget.qml",
-    "panel": "App.qml"
+    "service": "ui/Service.qml",
+    "barWidget": "ui/BarWidget.qml",
+    "panel": "ui/App.qml"
   },
   "barWidget": {
     "displayName": "Omamail",
@@ -38,7 +38,7 @@
     "defaultSection": "right",
     "defaults": {
       "refreshIntervalSec": 120,
-      "maxMessages": 25,
+      "maxMessages": 50,
       "heavyMessageRendering": "Show plain text first",
       "contentDirection": "Auto",
       "defaultQuery": "in:inbox",
@@ -47,9 +47,7 @@
       "undoSendSeconds": 10,
       "unifiedCalendarView": false,
       "openOnClick": "Window",
-      "showBarIcon": true,
-      "previewOnCursor": false,
-      "markReadDelaySec": 2
+      "showBarIcon": true
     },
     "schema": [
       {
@@ -76,24 +74,7 @@
         "min": 5,
         "max": 100,
         "step": 5,
-        "defaultValue": 25
-      },
-      {
-        "key": "previewOnCursor",
-        "type": "boolean",
-        "label": "Preview as the cursor moves",
-        "defaultValue": false,
-        "description": "Show a message as soon as the cursor reaches it, instead of waiting for Enter. Off by default because stepping through a list would otherwise mark every message it passed read; with this on, a previewed message is marked read only once the cursor has stayed on it. Not applied in a narrow window, where the reader takes the list's place."
-      },
-      {
-        "key": "markReadDelaySec",
-        "type": "integer",
-        "label": "Mark a previewed message read after (seconds)",
-        "min": 0,
-        "max": 30,
-        "step": 1,
-        "defaultValue": 2,
-        "description": "How long the cursor has to stay on a message before it counts as read. 0 marks it read as soon as it is previewed. Only applies while Preview as the cursor moves is on; Enter always marks it read."
+        "defaultValue": 50
       },
       {
         "key": "heavyMessageRendering",

@@ -72,9 +72,11 @@ Recommend helping fix bounded, clear issues; recommend Request Changes for compl
 
 ## PR title and description
 
-After understanding the final contents, correct missing, vague, stale or misleading metadata directly when authorized. A title is a concise release-note statement of the concrete delivered capability or fix, using the repository's language/conventions: e.g. “Preserve paragraph direction in outgoing replies.” Avoid “Update code,” internal task labels and unsupported claims.
+After understanding the final contents, inspect and, when authorized, correct the PR title and description as a normal required part of review. Do this even when the existing metadata is not strictly false: the final metadata must describe the reviewed head clearly enough to serve as its release-note source. Re-read and update it again after review fixes, conflict resolution, rebases or scope changes so it never describes an earlier revision.
 
-The description explains the user-visible problem and resulting behavior, then implementation details that help review, actual validation and material limitations. Match its length to the change and respect the repository template. Preserve useful issue references, attribution, migration notes, breaking changes and required checklists; do not claim tests passed or mark author attestations on their behalf. Describe implemented behavior, not requested work that remains absent. Re-read metadata immediately before editing to avoid silently replacing newer author edits; reconcile changes. Verify the saved result.
+A title is a concise release-note statement of the concrete user-visible capability, optimization or bug fix. Lead with a precise action and name the affected behavior, for example “Add Lazygit-style reader scrolling and directional navigation” or “Prevent automatic pagination from retrying failed pages.” Avoid “Update code,” “Improve things,” internal task labels, implementation-only wording and unsupported claims. A reader should understand what changed without opening the PR.
+
+The description explains the user-visible problem and resulting behavior first, then the implementation details that help review, the exact validation performed on the current head, and material limitations. For keyboard or interaction changes, enumerate the final mappings and say which established behaviors remain unchanged. Keep related documentation surfaces such as the README and project website consistent when they already present the affected feature. Match the description's length to the change and respect the repository template. Preserve useful issue references, attribution, migration notes, breaking changes and required checklists; do not claim tests passed or mark author attestations on their behalf. Describe implemented behavior, not requested work that remains absent. Re-read metadata immediately before editing to avoid silently replacing newer author edits; reconcile changes. Verify the saved title and body after editing.
 
 Use structured tool arguments or a temporary UTF-8 file with `gh pr edit --body-file` for multiline text. Never interpolate contributor text into shell code or use shell command substitution for it.
 
@@ -91,6 +93,18 @@ Before publishing, re-read the PR state, head and relevant base/CI state. If the
 Submit APPROVE only when functional/test/performance coverage is sufficient, required checks pass for the reviewed revision, Security is PASS, UI evidence is PASS or NOT APPLICABLE, and all new-feature scope has the user's explicit acceptance. Prepare REQUEST_CHANGES for substantive unresolved blockers or missing security evidence, and submit it only after the user selects that outcome. If GitHub disallows a formal review (e.g. self-review) or permissions are insufficient, report that accurately and preserve the complete review draft; do not claim publication. Pending CI or environment limits must remain visible and do not justify approval. Do not poll indefinitely; record the pending state and continue the queue.
 
 Record per-PR details locally: URL, reviewed SHA, outcome/security verdict, fixes pushed or local-only, metadata edits, remaining blockers and worktree path. For passing PRs, return the brief status described above; for other PRs, report the details needed to resolve findings and make pending decisions. Include review links when published. After each batch, collect PRs that passed this review and are currently eligible to merge: all new-feature scope is explicitly accepted by the user, the reviewed head is still current, required checks and repository approval requirements pass, no unresolved blocking review or merge conflict remains, and the PR is open and not a draft. Summarize eligible PR numbers, titles, reviewed SHAs and proposed merge method, then explicitly ask the user whether to merge those PRs. Ask once for the batch, not once per PR. If none qualify, report why and do not ask to merge blocked PRs. In read-only/draft mode, report potential candidates without initiating a merge approval flow.
+
+## User-facing review format
+
+Make every progress update and final review easy to scan. Do not mix product decisions, technical findings, security, UI evidence, validation and requested actions into one paragraph.
+
+- Use short paragraphs separated by blank lines.
+- Use concise bold labels or headings for distinct verdicts and decisions, such as **Product**, **Finding**, **Security**, **UI evidence**, **Validation**, and **Next step**.
+- Use bullets for multiple PRs, multiple findings or multiple checks. Keep one idea per bullet.
+- Put key names, action ids, commands, SHAs and short identifiers in inline code.
+- Use fenced code blocks only for multiline commands, logs, patches or exact text the user may copy; never use a code block merely as decoration.
+- Lead with the outcome. State blockers and required user choices separately at the end.
+- Preserve the brief one-sentence style for a published passing review, but use the structured format in the user-facing batch report.
 
 Passing review or publishing APPROVE is not merge authorization. Wait for explicit user confirmation of the selected PRs; silence is not approval. If the user already explicitly authorized merging these specific PRs in this session, honor that authorization without asking again. Resolve the merge method from the user's instructions or repository conventions/allowed methods, and include it in the concrete proposal when confirmation is needed.
 
