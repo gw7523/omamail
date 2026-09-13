@@ -73,7 +73,10 @@ Item {
     var id = String(account.selectedId || "")
     var summary = account.selectedMessage
     if (id === "" || !summary || String(summary.id || "") !== id) return false
-    var text = account.selectedBody ? String(account.selectedBody.text || "") : ""
+    // The subject counts: "Dinner Thursday at 7pm" over a body that says
+    // only "see you there" is a message about a date.
+    var text = String(summary.subject || "") + "\n"
+      + (account.selectedBody ? String(account.selectedBody.text || "") : "")
     if (!Agent.mentionsDate(text)) return false
     if (Agent.tooOldForEvents(Unified.messageTime(summary), Date.now())) return false
     var key = String(account.accountId || "") + " " + id

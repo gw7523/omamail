@@ -60,7 +60,7 @@ calendar's event composer with the fields filled in, so the owner chooses the
 calendar and looks the times over before anything is written; a written event
 waves its suggestion away, a dismissed one stays away for the session.
 
-The gates are local and cheap: the setting, a date in the text
+The gates are local and cheap: the setting, a date in the subject or the text
 (`Agent.mentionsDate`, generous on purpose), a message from the last two months
 (one with no known date is not looked at), no look at that message yet, and at
 most two looks running at once; a look that cannot start yet waits its turn. A

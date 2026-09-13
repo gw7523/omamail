@@ -199,6 +199,12 @@ Item {
       compare(lastStart().messageId, "44:INBOX")
       tryCompare(agent, "starting", false)
 
+      // A date in the subject alone is a date.
+      bridge.starts = []
+      open(adas, "46:INBOX", "Dinner Thursday at 7pm at Luigi's", "see you there")
+      compare(lastStart().messageId, "46:INBOX", "the subject counts")
+      tryCompare(agent, "starting", false)
+
       // The look is on the list now; opening the message again asks nothing.
       setJobs([look("look-44", ada, "44:INBOX", "running")])
       bridge.starts = []
