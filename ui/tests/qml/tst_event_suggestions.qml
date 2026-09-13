@@ -349,6 +349,14 @@ Item {
         { key: "j:1", jobId: "j", index: 1, title: "Offsite", startMs: start, endMs: start + 86400000, allDay: true, location: "", notes: "" }
       ]
       tryCompare(card, "visible", true)
+      // Folded until asked: the heading says how many, the rows wait.
+      compare(named(card, "suggestionHeading", [])[0].text, "The agent found 2 events in this message")
+      compare(named(card, "suggestionTitle", []).length, 0, "a guess is a line above the message, not a panel over it")
+      compare(card.expanded, false)
+      var foldedHeight = card.height
+      mouseClick(named(card, "suggestionHeader", [])[0])
+      tryCompare(card, "expanded", true)
+      tryVerify(function() { return card.height > foldedHeight }, 1000, "and opens on a click")
       var titles = named(card, "suggestionTitle", [])
       compare(titles.length, 2)
       compare(titles[0].text, "<b>Dinner</b> <img src=\"http://127.0.0.1:1/x\">")
@@ -365,6 +373,11 @@ Item {
       mouseClick(dismisses[0])
       compare(dismissed.count, 1)
       compare(dismissed.signalArguments[0][0], "j:0")
+      // Another look's findings fold again; the same look's do not.
+      card.suggestions = [{ key: "j:1", jobId: "j", index: 1, title: "Offsite", startMs: start, endMs: start + 3600000, location: "", notes: "" }]
+      compare(card.expanded, true, "one dismissed is still the same look")
+      card.suggestions = [{ key: "k:0", jobId: "k", index: 0, title: "Other", startMs: start, endMs: start + 3600000, location: "", notes: "" }]
+      compare(card.expanded, false, "a new look starts folded")
       card.suggestions = []
       tryCompare(card, "visible", false)
     }

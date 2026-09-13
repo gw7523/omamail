@@ -23,6 +23,12 @@ Rectangle {
   signal dismissRequested(string key)
 
   readonly property var rows: Array.isArray(suggestions) ? suggestions : []
+  // Folded until asked: a guess about somebody else's mail is a line above
+  // the message, not a panel over it. The heading says how many were found
+  // and opens on a click; a new look's findings fold again.
+  property bool expanded: false
+  readonly property string lookId: rows.length > 0 ? String(rows[0].jobId || "") : ""
+  onLookIdChanged: expanded = false
   visible: rows.length > 0
   implicitHeight: visible ? column.implicitHeight + Style.space(24) : 0
   height: implicitHeight
@@ -38,28 +44,46 @@ Rectangle {
     width: parent.width - Style.space(28)
     spacing: Style.space(8)
 
-    Row {
-      spacing: Style.space(6)
+    Item {
+      objectName: "suggestionHeader"
+      width: parent.width
+      implicitHeight: Math.max(heading.implicitHeight, Style.font.icon)
+
+      Row {
+        spacing: Style.space(6)
+        anchors.verticalCenter: parent.verticalCenter
+        ActionIcon {
+          name: "calendar"
+          iconSize: Style.font.icon
+          color: root.accentColor
+          anchors.verticalCenter: parent.verticalCenter
+        }
+        Text {
+          id: heading
+          objectName: "suggestionHeading"
+          text: root.rows.length === 1 ? "The agent found an event in this message"
+            : "The agent found " + root.rows.length + " events in this message"
+          color: root.textColor
+          font.family: root.panelFontFamily
+          font.pixelSize: Style.font.bodySmall
+          textFormat: Text.PlainText
+          anchors.verticalCenter: parent.verticalCenter
+        }
+      }
       ActionIcon {
-        name: "calendar"
+        objectName: "suggestionFold"
+        name: root.expanded ? "chevronDown" : "chevronRight"
         iconSize: Style.font.icon
-        color: root.accentColor
+        color: root.dimColor
+        anchors.right: parent.right
         anchors.verticalCenter: parent.verticalCenter
       }
-      Text {
-        objectName: "suggestionHeading"
-        text: root.rows.length === 1 ? "The agent found an event in this message"
-          : "The agent found " + root.rows.length + " events in this message"
-        color: root.textColor
-        font.family: root.panelFontFamily
-        font.pixelSize: Style.font.bodySmall
-        textFormat: Text.PlainText
-        anchors.verticalCenter: parent.verticalCenter
-      }
+      TapHandler { onTapped: root.expanded = !root.expanded }
+      HoverHandler { cursorShape: Qt.PointingHandCursor }
     }
 
     Repeater {
-      model: root.rows
+      model: root.expanded ? root.rows : []
 
       Column {
         required property var modelData
