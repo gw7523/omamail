@@ -18,6 +18,11 @@ Item {
   property var seenIds: []
   property bool attention: false
   property var attentionByMessage: ({})
+  // Looks for events by account and message — running or finished — and how
+  // many are running: a look draws no row, so it is read from here and not
+  // from byMessage.
+  property var eventLooks: ({})
+  property int activeEventLooks: 0
   property int projectionSerial: 0
   property var pendingJobs: null
   function acknowledge(jobId) {
@@ -84,6 +89,8 @@ Item {
       root.finishedIds = result.finishedIds || []
       root.attention = result.attention === true
       root.attentionByMessage = result.attentionByMessage || ({})
+      root.eventLooks = result.eventLooks || ({})
+      root.activeEventLooks = Number(result.activeEventLooks) || 0
       root.pendingJobs = null
       root.jobs = next
       var news = result.newlyFinished || []
@@ -93,6 +100,7 @@ Item {
   onAccountIdChanged: {
     byMessage = ({})
     attentionByMessage = ({})
+    eventLooks = ({})
     projectJobs()
   }
   onSeenIdsChanged: projectJobs()

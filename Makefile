@@ -57,6 +57,7 @@ QML_FILES := ui/Service.qml ui/BarWidget.qml ui/App.qml ui/compose/RecoveryContr
 	ui/components/AddressMenu.qml \
 	ui/components/ComposeAgent.qml \
 	ui/agent/AgentRunner.qml ui/agent/AgentContext.qml \
+	ui/agent/EventSuggester.qml ui/components/EventSuggestionCard.qml \
 	ui/components/AccountRemovalDialog.qml \
 	ui/components/BackBar.qml \
 	ui/components/SettingsPage.qml \

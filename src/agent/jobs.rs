@@ -80,6 +80,18 @@ pub fn validate_payload(value: &Value) -> Result<Value> {
                     text(v)?;
                 }
             }
+            // A look for calendar events: one message, the fixed ask, no draft
+            // and no continuation — a look answers once and is not talked to.
+            "events" => {
+                if v != true
+                    || o.contains_key("messages")
+                    || o.contains_key("draft")
+                    || o.contains_key("parent")
+                    || o["messageId"].as_str().unwrap_or("").is_empty()
+                {
+                    return Err("agent_invalid_events");
+                }
+            }
             "accountId" | "account" | "messageId" | "subject" | "prompt" | "message"
             | "draftKey" | "draftFingerprint" | "parent" | "folder" => {
                 let s = text(v)?;
@@ -170,7 +182,7 @@ pub fn read_job(store: &Store, id: &str) -> Result<Value> {
             return Err("agent_invalid_preview");
         }
     }
-    if !["draft", "message"].contains(&v["kind"].as_str().unwrap_or(""))
+    if !["draft", "message", "events"].contains(&v["kind"].as_str().unwrap_or(""))
         || !["queued", "running", "done", "failed", "cancelled"]
             .contains(&v["state"].as_str().unwrap_or(""))
     {
@@ -204,10 +216,16 @@ pub fn read_job(store: &Store, id: &str) -> Result<Value> {
             }
         }
     }
-    for key in ["error", "progress"] {
+    for key in ["error", "progress", "summary"] {
         if let Some(e) = v.get(key) {
             text(e)?;
         }
+    }
+    if let Some(events) = v.get("events") {
+        if v["kind"] != "events" {
+            return Err("agent_invalid_events");
+        }
+        super::events::validate(events)?;
     }
     Ok(v)
 }
@@ -432,7 +450,7 @@ fn new_job(context: Value) -> Result<Value> {
         .map(|b| format!("{b:02x}"))
         .collect::<String>();
     store.create(&id)?;
-    let mut job = json!({"id":id,"conversationId":if conversation.is_empty(){id.clone()}else{conversation},"requestPreview":context["prompt"].as_str().unwrap().split_whitespace().collect::<Vec<_>>().join(" ").chars().take(120).collect::<String>().trim_end(),"kind":if context["draft"].is_object(){"draft"}else{"message"},"messageIds":[],"state":"queued","created":now(),"createdOrder":SystemTime::now().duration_since(UNIX_EPOCH).unwrap_or_default().as_nanos().min(u64::MAX as u128)as u64,"updated":now(),"resultReady":false,"canContinue":false,"provider":"claude","resume":resume,"progress":"Starting..."});
+    let mut job = json!({"id":id,"conversationId":if conversation.is_empty(){id.clone()}else{conversation},"requestPreview":context["prompt"].as_str().unwrap().split_whitespace().collect::<Vec<_>>().join(" ").chars().take(120).collect::<String>().trim_end(),"kind":if context["draft"].is_object(){"draft"}else if super::events::is_look(&context){"events"}else{"message"},"messageIds":[],"state":"queued","created":now(),"createdOrder":SystemTime::now().duration_since(UNIX_EPOCH).unwrap_or_default().as_nanos().min(u64::MAX as u128)as u64,"updated":now(),"resultReady":false,"canContinue":false,"provider":"claude","resume":resume,"progress":"Starting..."});
     for k in [
         "accountId",
         "subject",
@@ -571,7 +589,7 @@ fn bounded_projection_jobs(jobs: &[Value]) -> Result<()> {
             match key.as_str() {
                 "id" | "accountId" | "subject" | "messageId" | "draftKey" | "draftFingerprint"
                 | "conversationId" | "requestPreview" | "kind" | "state" | "provider"
-                | "resume" | "sessionId" | "error" | "progress" | "question" => {
+                | "resume" | "sessionId" | "error" | "progress" | "question" | "summary" => {
                     if text(value)?.len() > 16 * 1024 + 64 {
                         return Err("agent_invalid_jobs");
                     }
@@ -592,6 +610,12 @@ fn bounded_projection_jobs(jobs: &[Value]) -> Result<()> {
                             return Err("agent_invalid_jobs");
                         }
                     }
+                }
+                "events" => {
+                    if job["kind"] != "events" {
+                        return Err("agent_invalid_jobs");
+                    }
+                    super::events::validate(value).map_err(|_| "agent_invalid_jobs")?;
                 }
                 _ => return Err("agent_invalid_jobs"),
             }
@@ -654,11 +678,37 @@ pub fn projection(params: &Value) -> Result<Value> {
                 .saturating_mul(1_000_000_000),
         )
     };
+    let look = |j: &Value| j["kind"] == "events";
     let attention = |j: &Value| {
-        !seen.contains(&j["id"])
+        !look(j)
+            && !seen.contains(&j["id"])
             && (j["resultReady"] == true || matches!(j["state"].as_str(), Some("done" | "failed")))
     };
-    for j in jobs {
+    // A look answers to the message it read, inside its account: the one
+    // running, else the newest that finished. A look that failed or was
+    // cancelled answered nothing and is not here, so the message may be
+    // looked at again.
+    let mut looks: std::collections::BTreeMap<String, serde_json::Map<String, Value>> =
+        std::collections::BTreeMap::new();
+    for j in jobs.iter().filter(|j| look(j)) {
+        let (Some(account), Some(id)) = (
+            j["accountId"].as_str().filter(|s| !s.is_empty()),
+            j["messageId"].as_str().filter(|s| !s.is_empty()),
+        ) else {
+            continue;
+        };
+        if !active(j) && j["state"] != "done" {
+            continue;
+        }
+        let map = looks.entry(account.to_owned()).or_default();
+        if map
+            .get(id)
+            .is_none_or(|current| active(j) || (!active(current) && order(j) > order(current)))
+        {
+            map.insert(id.to_owned(), j.clone());
+        }
+    }
+    for j in jobs.iter().filter(|j| !look(j)) {
         let Some(account) = j["accountId"].as_str().filter(|s| !s.is_empty()) else {
             continue;
         };
@@ -685,7 +735,7 @@ pub fn projection(params: &Value) -> Result<Value> {
         String,
         std::collections::BTreeMap<String, Vec<Value>>,
     > = std::collections::BTreeMap::new();
-    for job in jobs {
+    for job in jobs.iter().filter(|j| !look(j)) {
         let Some(account) = job["accountId"].as_str().filter(|s| !s.is_empty()) else {
             continue;
         };
@@ -755,7 +805,7 @@ pub fn projection(params: &Value) -> Result<Value> {
         .cloned()
         .collect::<Vec<_>>();
     Ok(
-        json!({"scopesByAccount":scope_projection,"attentionIds":jobs.iter().filter(|j|attention(j)).map(|j|j["id"].clone()).collect::<Vec<_>>(),"byAccount":accounts,"byMessage":map,"anyActive":jobs.iter().any(active),"attention":jobs.iter().any(attention),"attentionByMessage":attention_map,"activeIds":jobs.iter().filter(|j|active(j)).map(|j|j["id"].clone()).collect::<Vec<_>>(),"finishedIds":jobs.iter().filter(|j|!active(j)).map(|j|j["id"].clone()).collect::<Vec<_>>(),"newlyFinished":finished}),
+        json!({"scopesByAccount":scope_projection,"attentionIds":jobs.iter().filter(|j|attention(j)).map(|j|j["id"].clone()).collect::<Vec<_>>(),"byAccount":accounts,"byMessage":map,"anyActive":jobs.iter().any(active),"attention":jobs.iter().any(attention),"attentionByMessage":attention_map,"activeIds":jobs.iter().filter(|j|active(j)).map(|j|j["id"].clone()).collect::<Vec<_>>(),"finishedIds":jobs.iter().filter(|j|!active(j)).map(|j|j["id"].clone()).collect::<Vec<_>>(),"newlyFinished":finished,"eventLooks":looks,"activeEventLooks":jobs.iter().filter(|j|look(j)&&active(j)).count()}),
     )
 }
 
@@ -900,6 +950,64 @@ mod tests {
         ] {
             assert!(!legacy_worker_args(&args, &exe, &id));
         }
+    }
+    #[test]
+    fn a_look_is_one_message_with_the_flag_and_nothing_else() {
+        let look = json!({"accountId":"imap:a@example.org","messageId":"42:INBOX","account":"a@example.org","folder":"INBOX","subject":"Dinner","prompt":"Find the calendar events in this message.","message":"Dinner Thursday at 7pm?","events":true});
+        assert!(validate_payload(&look).is_ok());
+        for bad in [
+            json!({"accountId":"a","messageId":"1","prompt":"p","message":"m","events":false}),
+            json!({"accountId":"a","messageId":"1","prompt":"p","message":"m","events":"yes"}),
+            json!({"accountId":"a","messageId":"","messages":[{"messageId":"1","message":"m"}],"prompt":"p","events":true}),
+            json!({"accountId":"a","messageId":"1","prompt":"p","draft":{"body":"b"},"events":true}),
+            json!({"parent":"a".repeat(32),"prompt":"next","events":true}),
+        ] {
+            assert!(validate_payload(&bad).is_err(), "{bad}");
+        }
+    }
+    #[test]
+    fn a_look_is_found_by_its_message_and_draws_no_row() {
+        let look = |id: &str, account: &str, message: &str, state: &str, order: u64| json!({"id":id,"accountId":account,"kind":"events","messageId":message,"messageIds":[message],"state":state,"createdOrder":order,"created":order,
+            "events":if state=="done"{json!([{"title":"Dinner","startMs":1_789_232_400_000i64,"endMs":1_789_239_600_000i64,"allDay":false}])}else{json!([])}});
+        let ask = json!({"id":"ask","accountId":"a","kind":"message","messageId":"42","messageIds":["42"],"state":"done","resultReady":true,"createdOrder":9});
+        let jobs = json!([
+            look("old", "a", "42", "done", 1),
+            look("new", "a", "42", "done", 2),
+            look("run", "a", "43", "running", 3),
+            look("dead", "a", "44", "failed", 4),
+            look("gone", "a", "45", "cancelled", 5),
+            look("bobs", "b", "42", "done", 6),
+            ask
+        ]);
+        let p = projection(&json!({"jobs":jobs,"accountId":"a","seenIds":[]})).unwrap();
+        // The row's job is the ask, never the look, and only the ask glows.
+        assert_eq!(p["byMessage"]["42"]["id"], "ask");
+        assert_eq!(p["byMessage"].get("43"), None);
+        assert_eq!(p["attentionIds"], json!(["ask"]));
+        assert!(p["scopesByAccount"]["a"].get("[\"43\"]").is_none(), "a look has no scope");
+        // But it is polled while it runs, and it is counted.
+        assert_eq!(p["anyActive"], true);
+        assert_eq!(p["activeIds"], json!(["run"]));
+        assert_eq!(p["activeEventLooks"], 1);
+        // The newest finished look at a message, in its own account; a failed
+        // or cancelled one answered nothing and leaves the message open.
+        assert_eq!(p["eventLooks"]["a"]["42"]["id"], "new");
+        assert_eq!(p["eventLooks"]["a"]["42"]["events"][0]["title"], "Dinner");
+        assert_eq!(p["eventLooks"]["a"]["43"]["id"], "run");
+        assert_eq!(p["eventLooks"]["a"].get("44"), None);
+        assert_eq!(p["eventLooks"]["a"].get("45"), None);
+        assert_eq!(p["eventLooks"]["b"]["42"]["id"], "bobs");
+        // A running look outranks a finished one on the same message.
+        let again = projection(&json!({"jobs":[look("new","a","42","done",2),look("later","a","42","running",7)],"accountId":"a"})).unwrap();
+        assert_eq!(again["eventLooks"]["a"]["42"]["id"], "later");
+        // The events record is validated before any map is built, and only
+        // on a look.
+        let mut ask_with_events = jobs[6].clone();
+        ask_with_events["events"] = json!([]);
+        assert!(projection(&json!({"jobs":[ask_with_events],"accountId":"a"})).is_err());
+        let mut bad = look("x", "a", "1", "done", 1);
+        bad["events"] = json!([{"title":"T","startMs":1,"shell":"rm"}]);
+        assert!(projection(&json!({"jobs":[bad],"accountId":"a"})).is_err());
     }
     #[test]
     fn session_id_is_only_uuid() {

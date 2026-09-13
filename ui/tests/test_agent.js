@@ -108,3 +108,87 @@ assert.equal(a.pendingJob(history,history[0],true,'','a1'),null)
 assert.equal(a.pendingLimit(Array(20).fill('next'),'next').length > 0,true)
 assert.equal(a.pendingLimit([], 'x'.repeat(65537)).length > 0,true)
 assert.equal(a.pendingLimit(['one'], 'two'),'')
+
+// ------------------------------------------------------------ suggested events
+{
+  // The prefilter: a date or a time in the text, by name, number or
+  // relation; not a word that only looks like one.
+  const yes = ["See you Thursday at 3pm", "Dinner on 12 September", "Sep 12 works for me", "12/09/2026 at the office",
+    "2026-09-12", "call at 14:30", "tomorrow morning", "next week then", "May 12 works", "on Thu, then"]
+  const no = ["I may go", "he sat down and thought", "the sun was out", "no dates in here", "", "march on", "a dec in the code"]
+  for (const text of yes) assert.strictEqual(a.mentionsDate(text), true, text)
+  for (const text of no) assert.strictEqual(a.mentionsDate(text), false, text)
+
+  const now = Date.parse("2026-09-07T12:00:00Z")
+  assert.strictEqual(a.tooOldForEvents(now - 3 * 86400000, now), false)
+  assert.strictEqual(a.tooOldForEvents(now - 90 * 86400000, now), true)
+  assert.strictEqual(a.tooOldForEvents(0, now), true, "no date known is no reason to spend a look")
+  assert.strictEqual(a.EVENTS_IN_FLIGHT, 2)
+  assert.ok(a.EVENTS_PROMPT.length > 0)
+
+  // The look is a background job: a note only when it found something.
+  const look = { id: "e1", kind: "events", messageId: "m1", accountId: A, state: "running", created: 3 }
+  const done = { id: "e0", kind: "events", messageId: "m2", accountId: A, state: "done", created: 2,
+    events: [{ title: "Dinner", startMs: 1789232400000, endMs: 1789239600000 }] }
+  assert.strictEqual(a.isEventsJob(look), true)
+  assert.strictEqual(a.isEventsJob(jobs[0]), false)
+  assert.strictEqual(a.finishedNote(done), "The agent found an event in the message")
+  assert.strictEqual(a.finishedNote({ id: "e2", kind: "events", state: "done", events: [], subject: "S" }), "", "nothing found says nothing")
+  assert.strictEqual(a.finishedNote({ id: "e3", kind: "events", state: "done", subject: "S",
+    events: [{ title: "a" }, { title: "b" }] }), "The agent found 2 events in “S”")
+  assert.strictEqual(a.finishedNote({ id: "e4", kind: "events", state: "failed", subject: "S" }), "", "a failed look is not news")
+
+  // The look the projection holds for a message, in its account.
+  const looks = { [A]: { m1: look, m2: done } }
+  assert.strictEqual(a.lookFor(looks, A, "m1"), look)
+  assert.strictEqual(a.lookFor(looks, B, "m1"), null, "Bob's m1 was not looked at")
+  assert.strictEqual(a.lookFor(looks, A, "m9"), null)
+  assert.strictEqual(a.lookFor(looks, "", "m1"), null, "no account owns nothing")
+  assert.strictEqual(a.lookFor(null, A, "m1"), null)
+
+  // The suggestions: what a finished look found, less the dismissed.
+  const found = a.eventSuggestions(done, [])
+  assert.strictEqual(found.length, 1)
+  assert.strictEqual(found[0].title, "Dinner")
+  assert.strictEqual(found[0].key, "e0:0")
+  assert.strictEqual(found[0].jobId, "e0")
+  assert.deepEqual(copy(a.eventSuggestions(done, ["e0:0"])), [])
+  assert.deepEqual(copy(a.eventSuggestions(look, [])), [], "a look still running has found nothing yet")
+  assert.deepEqual(copy(a.eventSuggestions(null, [])), [])
+  assert.deepEqual(copy(a.eventSuggestions({ ...jobs[2], events: [{ title: "x", startMs: 1 }] }, [])), [], "an ask is not a look")
+  assert.deepEqual(copy(a.eventSuggestions({ id: "e6", kind: "events", state: "done",
+    events: [{ title: "", startMs: 1 }, { title: "No start" }] }, [])), [], "a title and a start, or no event")
+  const untimed = a.eventSuggestions({ id: "e7", kind: "events", state: "done", events: [{ title: "T", startMs: 1000 }] }, [])
+  assert.strictEqual(untimed[0].endMs, 1000 + 3600000, "an hour when no end was given")
+
+  // When, as the card says it.
+  const sep12 = new Date(2026, 8, 12, 19, 0).getTime()
+  const thisYear = new Date(2026, 8, 7).getTime()
+  assert.strictEqual(a.suggestionWhen({ startMs: sep12, endMs: sep12 + 3600000 }, thisYear), "Sat 12 Sep, 19:00–20:00")
+  assert.strictEqual(a.suggestionWhen({ startMs: sep12, endMs: sep12 }, thisYear), "Sat 12 Sep, 19:00")
+  // A whole day runs from midnight to the next: one day, or two.
+  const sep12day = new Date(2026, 8, 12).getTime()
+  assert.strictEqual(a.suggestionWhen({ startMs: sep12day, endMs: sep12day + 86400000, allDay: true }, thisYear), "Sat 12 Sep (all day)")
+  assert.strictEqual(a.suggestionWhen({ startMs: sep12day, endMs: sep12day + 2 * 86400000, allDay: true }, thisYear), "Sat 12 Sep – Sun 13 Sep (all day)")
+  assert.strictEqual(a.suggestionWhen({ startMs: sep12, endMs: sep12 + 26 * 3600000 }, thisYear), "Sat 12 Sep, 19:00 – Sun 13 Sep, 21:00")
+  assert.strictEqual(a.suggestionWhen({ startMs: sep12, endMs: sep12 + 3600000 }, new Date(2027, 0, 1).getTime()), "Sat 12 Sep 2026, 19:00–20:00")
+  assert.strictEqual(a.suggestionWhen({ startMs: 0 }, thisYear), "")
+
+  // The composer's fields: a whole day becomes nine to ten, and says so.
+  const timed = a.eventPrefill({ title: "Dinner", startMs: sep12, endMs: sep12 + 7200000, location: "Luigi's", notes: "Table for 4" })
+  assert.deepEqual(copy(timed), { title: "Dinner", startMs: sep12, endMs: sep12 + 7200000, location: "Luigi's", description: "Table for 4", accountId: "" })
+  const whole = a.eventPrefill({ title: "Offsite", startMs: new Date(2026, 9, 2).getTime(), endMs: new Date(2026, 9, 3).getTime(), allDay: true }, A)
+  assert.strictEqual(new Date(whole.startMs).getHours(), 9)
+  assert.strictEqual(whole.endMs - whole.startMs, 3600000)
+  assert.strictEqual(whole.description, "All day, as the message put it.")
+  assert.strictEqual(whole.accountId, A, "and whose calendar")
+  // Two whole days, and an evening that runs past midnight: the form holds
+  // one day, so the notes carry what the message put.
+  const twoDays = a.eventPrefill({ title: "Offsite", startMs: new Date(2026, 9, 2).getTime(), endMs: new Date(2026, 9, 4).getTime(), allDay: true })
+  assert.strictEqual(twoDays.description, "All day through Sat 3 Oct, as the message put it.")
+  const late = a.eventPrefill({ title: "Party", startMs: sep12, endMs: sep12 + 5 * 3600000, notes: "Bring wine" })
+  assert.strictEqual(new Date(late.endMs).getHours(), 23)
+  assert.strictEqual(new Date(late.endMs).getMinutes(), 59)
+  assert.strictEqual(late.description, "Bring wine\n\nThe message has it ending Sun 13 Sep, 00:00.")
+  assert.strictEqual(a.eventPrefill({ title: "T", startMs: sep12, endMs: sep12 + 3600000 }).accountId, "")
+}

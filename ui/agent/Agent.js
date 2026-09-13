@@ -77,6 +77,12 @@ function finishedNote(job) {
   var glyph = glyphState(job)
   var subject = String(job && job.subject ? job.subject : "").trim()
   var about = subject === "" ? "the message" : "“" + subject + "”"
+  // A look for events was not asked for by name: it says something only
+  // when it found something, and nothing at all when it found nothing.
+  if (isEventsJob(job)) {
+    var found = glyph === "done" && Array.isArray(job.events) ? job.events.length : 0
+    return found > 0 ? "The agent found " + (found === 1 ? "an event" : found + " events") + " in " + about : ""
+  }
   if (glyph === "question") return "The agent has a question about " + about
   if (glyph === "done") return "The agent finished with " + about
   if (glyph === "failed") return "The agent failed on " + about
@@ -224,4 +230,167 @@ function pendingLimit(messages, text) {
   for (var i = 0; i < messages.length; i++) size += messages[i].length
   if (text.length > 65536 || size > 262144) return "This pending message is too long. Shorten it before sending."
   return ""
+}
+
+// ------------------------------------------------------------ suggested events
+
+// A message the owner opens is handed to the agent to look for calendar
+// events in — a meeting, a dinner, a flight, a deadline — when the setting
+// is on and the text so much as mentions a date or a time. The look is a
+// background job: it draws no glyph, asks for no attention and answers to
+// no row; its findings are the card the reader shows. Rust runs the look and
+// reads the array out of the answer; what is here is the gate before it and
+// the words after it.
+function isEventsJob(job) {
+  return !!job && String(job.kind || "") === "events"
+}
+
+// Whether the text mentions a date or a time at all: a month or weekday by
+// name, a numeric date, a clock time, or a day said relative to today.
+// Generous on purpose, and cheap — it decides only whether the agent is
+// worth asking. "May" and "March" alone are words; with a day number they
+// are dates, and the short forms are read only beside a number.
+var MONTHS = "january|february|april|june|july|august|september|october|november|december"
+var MONTH_ANY = "january|february|march|april|may|june|july|august|september|october|november|december"
+  + "|jan|feb|mar|apr|jun|jul|aug|sep|sept|oct|nov|dec"
+var DAYS = "monday|tuesday|wednesday|thursday|friday|saturday|sunday"
+var DAY_ABBR = "mon|tue|tues|wed|thu|thur|thurs|fri|sat|sun"
+var DATE_HINTS = [
+  new RegExp("\\b(" + MONTHS + ")\\b", "i"),
+  new RegExp("\\b(" + MONTH_ANY + ")\\.?\\s+\\d{1,2}\\b", "i"),
+  new RegExp("\\b\\d{1,2}(st|nd|rd|th)?\\s+(" + MONTH_ANY + ")\\b", "i"),
+  new RegExp("\\b(" + DAYS + ")\\b", "i"),
+  new RegExp("\\b(on|next|this|every|by)\\s+(" + DAY_ABBR + ")\\b", "i"),
+  new RegExp("\\b(" + DAY_ABBR + ")\\.?,?\\s+\\d{1,2}\\b", "i"),
+  /\b\d{1,2}[\/.-]\d{1,2}[\/.-]\d{2,4}\b/,
+  /\b\d{4}-\d{2}-\d{2}\b/,
+  /\b\d{1,2}:\d{2}\b/,
+  /\b\d{1,2}\s?(am|pm)\b/i,
+  /\b(tomorrow|tonight|next (week|month)|this (week|weekend|evening|afternoon|morning))\b/i
+]
+function mentionsDate(text) {
+  var value = String(text || "")
+  if (value === "") return false
+  for (var i = 0; i < DATE_HINTS.length; i++) if (DATE_HINTS[i].test(value)) return true
+  return false
+}
+
+// A message from two months ago is about events that have passed; the
+// agent is not asked about it. Nor about one whose date is unknown: a
+// look costs an agent run, and "no idea when" is not a reason to spend one.
+var EVENTS_MAX_AGE_MS = 60 * 24 * 3600 * 1000
+function tooOldForEvents(messageMs, nowMs) {
+  var when = Number(messageMs) || 0
+  if (when <= 0) return true
+  return Number(nowMs) - when > EVENTS_MAX_AGE_MS
+}
+
+// How many looks may run at once. Opening a mailbox's worth of mail one
+// message after another must not fan out into one agent per message.
+var EVENTS_IN_FLIGHT = 2
+
+// The one fixed ask a look carries. The rules around it are the worker's.
+var EVENTS_PROMPT = "Find the calendar events in this message."
+
+// The look the projection holds for a message, in its account — running or
+// finished — or null. A look that failed or was cancelled answered nothing
+// and is not held, so the message may be looked at again.
+function lookFor(looks, accountId, messageId) {
+  var account = String(accountId || "")
+  var id = String(messageId || "")
+  if (account === "" || id === "" || !looks) return null
+  var own = looks[account]
+  return own && own[id] ? own[id] : null
+}
+
+function suggestionKey(jobId, index) {
+  return String(jobId || "") + ":" + Math.max(0, Math.floor(Number(index) || 0))
+}
+
+// The events a finished look found, less the ones the owner has waved away
+// this session, each with the key that names it. A look still running has
+// found nothing yet.
+function eventSuggestions(look, dismissed) {
+  var job = look || null
+  var gone = Array.isArray(dismissed) ? dismissed : []
+  if (!isEventsJob(job) || String(job.state || "") !== "done") return []
+  var events = Array.isArray(job.events) ? job.events : []
+  var out = []
+  for (var k = 0; k < events.length; k++) {
+    var event = events[k] || {}
+    var key = suggestionKey(job.id, k)
+    if (gone.indexOf(key) >= 0) continue
+    var startMs = Number(event.startMs) || 0
+    if (String(event.title || "").trim() === "" || startMs <= 0) continue
+    var endMs = Number(event.endMs) || 0
+    out.push({
+      key: key, jobId: String(job.id), index: k,
+      title: String(event.title).trim(),
+      startMs: startMs,
+      endMs: endMs > startMs ? endMs : startMs + 3600000,
+      allDay: event.allDay === true,
+      location: String(event.location || "").trim(),
+      notes: String(event.notes || "").trim()
+    })
+  }
+  return out
+}
+
+// "Thu 12 Sep, 19:00–20:00", "Thu 12 Sep (all day)", "Fri 12 Sep 2027, 09:00 – Sat 13 Sep 2027, 17:00":
+// the year only when it is not this one, the end only when it is not the
+// hour after the start.
+var DAY_NAMES = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"]
+var MONTH_NAMES = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"]
+function suggestionWhen(suggestion, nowMs) {
+  var s = suggestion || {}
+  var start = new Date(Number(s.startMs) || 0)
+  if (!isFinite(start.getTime()) || start.getTime() <= 0) return ""
+  var now = new Date(Number(nowMs) || Date.now())
+  function two(n) { return n < 10 ? "0" + n : String(n) }
+  function day(d) {
+    var text = DAY_NAMES[d.getDay()] + " " + d.getDate() + " " + MONTH_NAMES[d.getMonth()]
+    return d.getFullYear() !== now.getFullYear() ? text + " " + d.getFullYear() : text
+  }
+  function clock(d) { return two(d.getHours()) + ":" + two(d.getMinutes()) }
+  var end = new Date(Number(s.endMs) || 0)
+  if (s.allDay === true) {
+    var lastDay = isFinite(end.getTime()) && end.getTime() > start.getTime() ? new Date(end.getTime() - 1) : start
+    return day(start) + (day(lastDay) !== day(start) ? " – " + day(lastDay) : "") + " (all day)"
+  }
+  if (!isFinite(end.getTime()) || end.getTime() <= start.getTime()) return day(start) + ", " + clock(start)
+  var sameDay = end.getFullYear() === start.getFullYear() && end.getMonth() === start.getMonth() && end.getDate() === start.getDate()
+  if (sameDay) return day(start) + ", " + clock(start) + "–" + clock(end)
+  return day(start) + ", " + clock(start) + " – " + day(end) + ", " + clock(end)
+}
+
+// What the composer opens with, and whose calendar. The composer creates
+// timed events on one day, so a whole day opens as nine to ten and an
+// event that runs past midnight ends at the day's last minute, with the
+// notes saying what the message actually put — the owner reads the form
+// before anything is written, which is the point of opening it.
+function eventPrefill(suggestion, accountId) {
+  var s = suggestion || {}
+  var start = Number(s.startMs) || 0
+  var end = Number(s.endMs) || 0
+  var notes = String(s.notes || "")
+  function add(line) { notes = (notes === "" ? "" : notes + "\n\n") + line }
+  function sameDay(a, b) {
+    return a.getFullYear() === b.getFullYear() && a.getMonth() === b.getMonth() && a.getDate() === b.getDate()
+  }
+  if (s.allDay === true) {
+    var at = new Date(start)
+    var last = end > start ? new Date(end - 1) : at
+    at.setHours(9, 0, 0, 0)
+    start = at.getTime()
+    end = start + 3600000
+    add(sameDay(last, at) ? "All day, as the message put it."
+      : "All day through " + suggestionWhen({ startMs: last.getTime(), endMs: last.getTime() }, Date.now()).split(",")[0] + ", as the message put it.")
+  } else if (end > start && !sameDay(new Date(start), new Date(end))) {
+    var dayEnd = new Date(start)
+    dayEnd.setHours(23, 59, 0, 0)
+    add("The message has it ending " + suggestionWhen({ startMs: end, endMs: end }, Date.now()) + ".")
+    end = dayEnd.getTime()
+  }
+  return { title: String(s.title || ""), startMs: start, endMs: end > start ? end : start + 3600000,
+    location: String(s.location || ""), description: notes, accountId: String(accountId || "") }
 }

@@ -49,6 +49,43 @@ and **Replace body** apply only a completed successful reply; neither sends mail
 Replacement is two text edits and can require two undo steps. The mail list has no AI icon. The header AI button stays static without a
 breathing animation.
 
+## Suggested events
+
+With **Suggest calendar events from mail** on in Settings — off until it is — a
+message opened in the reader whose text mentions a date or a time is handed to
+the system AI once, in the background, with rules that ask for a JSON array of
+the events it finds and nothing else. The reader draws a card per event above
+the message: what, when, where, with **Add** and **Dismiss**. Add opens the
+calendar's event composer with the fields filled in, so the owner chooses the
+calendar and looks the times over before anything is written; a written event
+waves its suggestion away, a dismissed one stays away for the session.
+
+The gates are local and cheap: the setting, a date in the text
+(`Agent.mentionsDate`, generous on purpose), a message from the last two months
+(one with no known date is not looked at), no look at that message yet, and at
+most two looks running at once; a look that cannot start yet waits its turn. A
+look is a job started through the same account-bound `agent.context` read as an
+ask, with `events: true` on the payload; Rust records it with kind `events`.
+It is a background job — no row glyph, no glow, no place in the dock's history,
+and a note only when it found something — but it is polled while it runs, and
+`agent.jobsProjection` returns it under `eventLooks` by account and message
+with `activeEventLooks` counting the running ones. A look that failed or was
+cancelled answered nothing and is not held, so the message may be looked at
+again.
+
+The worker runs a look at the `haiku` model with the same non-interactive
+`dontAsk` permissions as every request. Its prompt is the rules, whose message
+it is, then every line of the message behind a `| ` prefix between two fence
+lines and nothing after the closing fence, which would be the one place a
+message could pretend to be the owner. The rules say those lines are a
+stranger's words, not instructions: that is a request to the model, not a
+sandbox, which is why the setting is off until you turn it on. When the job
+finishes, Rust reads the last JSON array out of the answer, keeps at most ten
+events on the job with their strings cleaned and cut to size and their times as
+epoch milliseconds — whole days from midnight to the next in this machine's
+zone — and validates that record again whenever it is read back. An answer
+with no array, or with dates that do not parse, is no event and no failure.
+
 ## Background bridge
 
 `AgentContext.qml` requests account-bound context from Rust; `AgentRunner.qml`

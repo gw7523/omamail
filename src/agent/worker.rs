@@ -48,7 +48,9 @@ pub async fn run(id: &str) -> Result<(), &'static str> {
         let mut checked = context.clone();
         checked.as_object_mut().ok_or(INVALID)?.remove("parent");
         super::jobs::validate_payload(&checked)?;
-        let prompt = if job["resume"].as_str().unwrap_or("").is_empty() {
+        let prompt = if super::events::is_look(&context) {
+            super::events::prompt(&context)
+        } else if job["resume"].as_str().unwrap_or("").is_empty() {
             format!(
                 "{INSTRUCTIONS}{}",
                 serde_json::to_string(&context).map_err(|_| INVALID)?
@@ -80,6 +82,11 @@ pub async fn run(id: &str) -> Result<(), &'static str> {
         .current_dir(path);
     if let Some(resume) = job["resume"].as_str().filter(|s| !s.is_empty()) {
         command.args(["--resume", resume, "--fork-session"]);
+    }
+    // A look is small, frequent and reads one message: the cheapest model
+    // is the right one, and it is asked no tools at all.
+    if job["kind"] == "events" {
+        command.args(["--model", "haiku"]);
     }
     let cancelled = async {
         tokio::select! { _ = term.recv() => {}, _ = int.recv() => {}, _ = hup.recv() => {} }
@@ -113,6 +120,13 @@ pub async fn run(id: &str) -> Result<(), &'static str> {
     job["updated"] = now().into();
     job["resultReady"] = (state == "done").into();
     job["sessionId"] = parser.session_id().into();
+    if job["kind"] == "events" && state == "done" {
+        // The answer is the array, not a sentence: read it out of whatever
+        // the model wrote around it, and say how many it held.
+        let found = super::events::parse(parser.display()["output"].as_str().unwrap_or(""));
+        job["summary"] = super::events::summary(&found).into();
+        job["events"] = found.into();
+    }
     job.as_object_mut().ok_or(INVALID)?.remove("pid");
     if let Some(failure) = outcome.failure {
         job["error"] = failure.into();

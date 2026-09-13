@@ -519,6 +519,75 @@ Column {
     }
   }
 
+  // A look at every message opened, on the owner's behalf. Off until it is
+  // turned on, because the message text leaves the window for the system
+  // AI; the switch says in a word which way it stands.
+  Rectangle {
+    objectName: "settings-suggest-events"
+    width: parent.width
+    implicitHeight: Math.max(suggestText.implicitHeight, suggestSwitch.implicitHeight)
+      + Style.space(16)
+    radius: Style.cornerRadius
+    color: Style.normalFillFor(root.textColor, root.accentColor)
+
+    Column {
+      id: suggestText
+      anchors.left: parent.left
+      anchors.leftMargin: Style.space(12)
+      anchors.right: suggestState.left
+      anchors.rightMargin: Style.space(10)
+      anchors.verticalCenter: parent.verticalCenter
+      spacing: Style.space(2)
+
+      Text {
+        width: parent.width
+        text: "Suggest calendar events from mail"
+        color: root.textColor
+        font.family: root.panelFontFamily
+        font.pixelSize: Style.font.bodySmall
+        textFormat: Text.PlainText
+      }
+
+      Text {
+        width: parent.width
+        text: "A message you open that mentions a date is handed to the AI once, "
+          + "in the background; the events it finds show above the message with "
+          + "Add and Dismiss, and Add opens the event composer for you to check "
+          + "and choose a calendar. The message text leaves this window for the "
+          + "system AI."
+        color: root.dimColor
+        font.family: root.panelFontFamily
+        font.pixelSize: Style.font.caption
+        wrapMode: Text.WordWrap
+        textFormat: Text.PlainText
+      }
+    }
+
+    Text {
+      id: suggestState
+      objectName: "suggestEventsState"
+      anchors.right: suggestSwitch.left
+      anchors.rightMargin: Style.space(8)
+      anchors.verticalCenter: parent.verticalCenter
+      text: suggestSwitch.checked ? "On" : "Off"
+      color: root.dimColor
+      font.family: root.panelFontFamily
+      font.pixelSize: Style.font.caption
+    }
+
+    ToggleSwitch {
+      id: suggestSwitch
+      objectName: "suggestEventsSwitch"
+      anchors.right: parent.right
+      anchors.rightMargin: Style.space(10)
+      anchors.verticalCenter: parent.verticalCenter
+      checked: !!root.service && root.service.suggestEvents === true
+      foreground: root.textColor
+      accent: root.accentColor
+      onToggled: if (root.service) root.service.setSuggestEvents(!root.service.suggestEvents)
+    }
+  }
+
   // -------------------------------------------------------- notifications
 
   Text {

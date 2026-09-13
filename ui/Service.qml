@@ -99,7 +99,8 @@ Item {
     undoSendSeconds: 10,
     unifiedCalendarView: false,
     showBarIcon: true,
-    unifiedMailboxes: false
+    unifiedMailboxes: false,
+    suggestEvents: false
   })
   property var settings: defaultSettingValues
   readonly property int undoSendSeconds: Outbox.normalizeDelay(
@@ -121,6 +122,14 @@ Item {
   function agentJobWantsAttention(job) { return agentRunner.wantsAttention(job) }
   function acknowledgeAgentJob(jobId) { agentRunner.acknowledge(jobId) }
   readonly property bool agentBusy: agentRunner.anyActive
+  // Whether a message opened in the reader is handed to the agent to look
+  // for calendar events in. Off until the owner turns it on: the message
+  // text leaves the window for the system AI.
+  readonly property bool suggestEvents: !!settings && settings.suggestEvents === true
+  function setSuggestEvents(value) { persistSetting("suggestEvents", value === true) }
+  readonly property var eventSuggestions: eventSuggester.suggestions
+  function dismissSuggestion(key) { eventSuggester.dismiss(key) }
+  function addSuggestedEvent(suggestion) { return eventSuggester.compose(suggestion) }
 
   function agentJobFor(messageId, accountId) {
     var target = agentTarget(messageId, accountId)
@@ -2313,6 +2322,12 @@ Item {
 
   AgentContext {
     id: agentContext
+    service: root
+    runner: agentRunner
+  }
+
+  EventSuggester {
+    id: eventSuggester
     service: root
     runner: agentRunner
   }

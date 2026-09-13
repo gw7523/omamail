@@ -1,5 +1,5 @@
 {
-  "apiVersion": 1,
+  "apiVersion": 2,
   "releasedApiVersion": 1,
   "protocolVersion": 1,
   "methods": [
@@ -319,10 +319,58 @@
       "equals": {
         "": null
       }
+    },
+    {
+      "name": "event look projection",
+      "method": "agent.jobsProjection",
+      "params": {
+        "jobs": [
+          {
+            "id": "look-run",
+            "accountId": "contract-account",
+            "kind": "events",
+            "messageId": "43",
+            "messageIds": [
+              "43"
+            ],
+            "state": "running",
+            "createdOrder": 3
+          },
+          {
+            "id": "look-done",
+            "accountId": "contract-account",
+            "kind": "events",
+            "messageId": "42",
+            "messageIds": [
+              "42"
+            ],
+            "state": "done",
+            "createdOrder": 2,
+            "events": [
+              {
+                "title": "Dinner",
+                "startMs": 1789232400000,
+                "endMs": 1789239600000,
+                "allDay": false
+              }
+            ]
+          }
+        ],
+        "accountId": "contract-account",
+        "seenIds": []
+      },
+      "equals": {
+        "activeEventLooks": 1,
+        "eventLooks.contract-account.43.id": "look-run",
+        "eventLooks.contract-account.42.events.0.title": "Dinner",
+        "attention": false
+      }
     }
   ],
   "unreleased": {
     "methods": [],
-    "cases": []
+    "cases": [
+      "event look projection"
+    ]
   }
 }
