@@ -550,13 +550,9 @@ Column {
 
       Text {
         width: parent.width
-        text: "Uses the system AI. A message from a person that names a time or "
-          + "a date is handed to it once when you open the message, in the "
-          + "background — notifications, newsletters and lists are not. Each "
-          + "look is one AI call and spends tokens on your account. What it "
-          + "finds folds into a line above the message, with Add and Dismiss; "
-          + "Add opens the event composer for you to check and choose a "
-          + "calendar. The message text leaves this window for the AI."
+        text: "Uses the system AI: a message from a person that names a time is "
+          + "sent to it once when opened, which spends tokens. Notifications, "
+          + "newsletters and lists are skipped. Nothing is written until you Add."
         color: root.dimColor
         font.family: root.panelFontFamily
         font.pixelSize: Style.font.caption
