@@ -41,11 +41,13 @@ Item {
     property var projectionErrors: []
     property bool holdStarts: false
     property var held: []
+    property string refuse: ""
     function call(method, params, callback) {
       if (method === "agent.jobsProjection") { modelBridge.call(method, params, function(result, error) { if (error) bridge.projectionErrors = bridge.projectionErrors.concat([error]); callback(result, error) }); return }
       if (method === "agent.jobsList") { callback(listed, ""); return }
       if (method === "agent.jobStart") {
         starts = starts.concat([params.payload])
+        if (refuse !== "") { var code = refuse; Qt.callLater(function() { callback(null, { code: -32000, message: code }) }); return }
         if (holdStarts) { held = held.concat([callback]); return }
         Qt.callLater(function() { callback({ id: "started" }, "") })
         return
@@ -147,6 +149,7 @@ Item {
       bridge.projectionErrors = []
       bridge.holdStarts = false
       bridge.held = []
+      bridge.refuse = ""
       contexts = []
       agent.backend = bridge
       setJobs([])
@@ -353,6 +356,30 @@ Item {
       controller.composeEnded()
       controller.eventCreated(true, "")
       compare(mailService.eventSuggestions.length, 1, "an event written after the composer closed is not this one")
+    }
+
+    // The system AI is Codex, say: Rust refuses the look with a word, the
+    // status line stays quiet, and no other message is asked about until
+    // the setting is turned off and on again.
+    function test_another_default_agent_refuses_once_and_quietly() {
+      var agent = seed(ada)
+      var adas = mailService.accountAt(0)
+      mailService.settings = ({ suggestEvents: true })
+      bridge.refuse = "agent_choose_claude"
+      var line = adas.lastError
+      open(adas, "60:INBOX", "Dinner?", "Dinner on Thursday at 7pm?")
+      compare(lastStart().messageId, "60:INBOX")
+      tryCompare(agent, "starting", false)
+      compare(adas.lastError, line, "a refused look puts nothing on the status line")
+      open(adas, "61:INBOX", "Lunch?", "Lunch tomorrow at 12:30?")
+      wait(20)
+      compare(bridge.starts.length, 1, "and nothing more is asked this session")
+      compare(contexts.length, 1, "nor read")
+      mailService.settings = ({ suggestEvents: false })
+      bridge.refuse = ""
+      mailService.settings = ({ suggestEvents: true })
+      tryVerify(function() { return bridge.starts.length === 2 }, 1000, "off and on asks again")
+      compare(bridge.starts[1].messageId, "61:INBOX")
     }
 
     function test_the_card_draws_text_and_asks_the_reader() {

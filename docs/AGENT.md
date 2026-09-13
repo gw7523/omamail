@@ -82,7 +82,11 @@ with `activeEventLooks` counting the running ones. A look that failed or was
 cancelled answered nothing and is not held, so the message may be looked at
 again.
 
-The worker runs a look at the `haiku` model with the same non-interactive
+The native worker runs Claude only, as it does for the panel. With another
+default agent selected in Omarchy, Rust refuses the first look
+(`agent_choose_claude`), the status line stays quiet, and no other message
+is looked at until the setting is turned off and on; the panel explains the
+setup when opened. The worker runs a look at the `haiku` model with the same non-interactive
 `dontAsk` permissions as every request. Its prompt is the rules, whose message
 it is, then every line of the message behind a `| ` prefix between two fence
 lines and nothing after the closing fence, which would be the one place a

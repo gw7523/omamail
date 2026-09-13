@@ -38,6 +38,11 @@ Item {
   // finished with nowhere to go would be a message read for nothing.
   property bool preparing: false
   property int serial: 0
+  // The system AI is not one the native worker runs — Omarchy's default
+  // agent is Codex, say. Rust refuses the first look with a word; the rest
+  // of the session asks nothing more, silently, and turning the setting
+  // off and on asks again. The panel says why when the owner opens it.
+  property bool unavailable: false
 
   readonly property var reading: service ? service.reading : null
   readonly property var suggestions: Agent.eventSuggestions(
@@ -50,12 +55,16 @@ Item {
   }
   Connections {
     target: root.service
-    function onSuggestEventsChanged() { root.consider() }
+    function onSuggestEventsChanged() { root.unavailable = false; root.consider() }
   }
   Connections {
     target: root.runner
     function onStartingChanged() { if (!root.runner.starting) root.drain() }
     function onEventLooksChanged() { root.drain() }
+    function onStartRefused(code) {
+      if (String(code) === "agent_choose_claude") { root.unavailable = true; root.waiting = [] }
+      root.started = []
+    }
   }
   onPreparingChanged: if (!preparing) drain()
 
@@ -69,7 +78,7 @@ Item {
   // of looks already running.
   function consider() {
     var account = reading
-    if (!account || !service || service.suggestEvents !== true || !service.hasAgent) return false
+    if (!account || !service || service.suggestEvents !== true || !service.hasAgent || unavailable) return false
     var id = String(account.selectedId || "")
     var summary = account.selectedMessage
     if (id === "" || !summary || String(summary.id || "") !== id) return false
@@ -119,7 +128,7 @@ Item {
           return
         }
         payload.events = true
-        if (!root.runner.start(payload))
+        if (!root.runner.start(payload, true))
           root.started = root.started.filter(function(key) { return key !== look.key })
       })
     return true
